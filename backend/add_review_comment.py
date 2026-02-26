@@ -1,7 +1,7 @@
 import psycopg2
 import os
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://misel:password123@localhost/smartcity")
+DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://")
 
 try:
     conn = psycopg2.connect(DATABASE_URL)
