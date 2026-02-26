@@ -1,6 +1,8 @@
-# 🏙️ Smart City — Urban Fix Platform
+# 🏙️ UrbanFix — Smart City Issue Management Platform
 
-A full-stack mobile application built with **Flutter** and **FastAPI** that bridges the gap between citizens and contractors for efficient urban issue resolution.
+> **Empowering citizens to report, track, and resolve urban issues — powered by Flutter, FastAPI, and soon, AI.**
+
+UrbanFix is a full-stack mobile application that connects **citizens** and **contractors** to streamline the detection and resolution of urban problems like potholes, broken streetlights, water leaks, and more. Citizens report issues with photos and GPS, contractors pick up and resolve tasks, and every step is tracked in real time.
 
 ---
 
@@ -59,6 +61,19 @@ A full-stack mobile application built with **Flutter** and **FastAPI** that brid
 | `bcrypt` | Password hashing |
 | `Pydantic` | Data validation |
 | `uvicorn` | ASGI server |
+
+---
+
+## 🤖 AI Roadmap (Coming Soon)
+
+The next major milestone for UrbanFix is integrating an **AI-powered issue detection model**:
+
+- 📸 **Auto-detect issue type** from a citizen's uploaded photo (e.g., pothole, flood, broken light)
+- 🏷️ **Auto-fill category and priority** based on image analysis — no manual selection needed
+- 🗺️ **Severity estimation** to help prioritize contractor task queues
+- 🔄 Built using a custom-trained **image classification model** (CNN / MobileNet)
+
+> This will make reporting as simple as *take a photo → submit* — the app handles the rest.
 
 ---
 
