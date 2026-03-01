@@ -12,6 +12,7 @@ import '../../../../features/reports/presentation/providers/complaints_provider.
 import '../../../../core/config/api_config.dart';
 import 'contractor_profile_page.dart';
 import 'contractor_tasks_page.dart';
+import '../../../../features/notifications/presentation/pages/notifications_page.dart';
 class ContractorDashboardPage extends StatefulWidget {
   const ContractorDashboardPage({super.key});
 
@@ -102,8 +103,8 @@ class _ContractorDashboardPageState extends State<ContractorDashboardPage> {
           // ── 1: Tasks ──────────────────────────────────────────────────────
           const ContractorTasksPage(),
 
-          // ── 2: Materials (placeholder) ────────────────────────────────────
-          _buildPlaceholder(Icons.inventory_2_rounded, 'Materials', 'Coming soon'),
+          // ── 2: Notifications ────────────────────────────────────
+          const NotificationsPage(isContractor: true),
 
           // ── 3: Profile ────────────────────────────────────────────────────
           ContractorProfilePage(
@@ -133,7 +134,7 @@ class _ContractorDashboardPageState extends State<ContractorDashboardPage> {
             BottomNavigationBarItem(
                 icon: Icon(Icons.assignment_rounded), label: 'Tasks'),
             BottomNavigationBarItem(
-                icon: Icon(Icons.inventory_2_rounded), label: 'Materials'),
+                icon: Icon(Icons.notifications_active_rounded), label: 'Notifications'),
             BottomNavigationBarItem(
                 icon: Icon(Icons.person_rounded), label: 'Profile'),
           ],
@@ -157,7 +158,11 @@ class _ContractorDashboardPageState extends State<ContractorDashboardPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const ContractorHeader(),
+              ContractorHeader(
+                userName: _userName,
+                userEmail: _userEmail,
+                onProfileReturned: _fetchUserInfo,
+              ),
               const SizedBox(height: 8),
               const StatusCards(),
               const SizedBox(height: 24),

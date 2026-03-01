@@ -174,6 +174,12 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
   Future<void> _loginWithToken(String token, String? role) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('token', token);
+    
+    // Log this login
+    final loginHistory = prefs.getString('login_history');
+    List<dynamic> logs = loginHistory != null ? jsonDecode(loginHistory) : [];
+    logs.add(DateTime.now().toIso8601String());
+    await prefs.setString('login_history', jsonEncode(logs));
     if (mounted) {
       Navigator.pushAndRemoveUntil(
         context,

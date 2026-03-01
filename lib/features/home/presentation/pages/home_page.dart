@@ -13,6 +13,7 @@ import '../widgets/track_complaints_list.dart';
 import '../../../../features/reports/presentation/providers/complaints_provider.dart';
 import 'reviews_page.dart';
 import '../../../profile/presentation/pages/profile_page.dart';
+import '../../../../features/notifications/presentation/pages/notifications_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -143,9 +144,11 @@ class _HomePageState extends State<HomePage> {
             )
           : (_selectedIndex == 1
               ? const ReviewsPage()
-              : (_selectedIndex == 3
-                  ? ProfilePage(userName: _userName, userEmail: _userEmail)
-                  : Center(child: Text("Page $_selectedIndex Coming Soon")))),
+              : (_selectedIndex == 2
+                  ? const NotificationsPage(isContractor: false)
+                  : (_selectedIndex == 3
+                      ? ProfilePage(userName: _userName, userEmail: _userEmail)
+                      : Center(child: Text("Page $_selectedIndex Coming Soon"))))),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           color: const Color(0xFF060D1F),

@@ -129,6 +129,7 @@ class ComplaintsProvider extends ChangeNotifier {
       if (response.statusCode == 200) {
         final newComplaint = Complaint.fromJson(json.decode(response.body));
         _myComplaints[0] = newComplaint;
+        _myComplaints.sort((a, b) => b.timestamp.compareTo(a.timestamp));
         _nearbyComplaints[0] = newComplaint;
       } else {
         _myComplaints.removeAt(0);

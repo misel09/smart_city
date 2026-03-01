@@ -29,7 +29,7 @@ class NearbyComplaintsList extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: Colors.white.withOpacity(0.1)),
             image: const DecorationImage(
-              image: NetworkImage('https://tile.openstreetmap.org/15/9643/12321.png'), // Safe static map
+              image: const AssetImage('assets/images/map_preview.png'), // Local static map image
               fit: BoxFit.cover,
               opacity: 0.25, // Dimmed for dark mode
             ),

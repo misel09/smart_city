@@ -614,15 +614,13 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
     }
 
     if (c.reviewedAt != null) {
-      bool rejectedEvent = c.status == ComplaintStatus.rejected || (c.reviewComment != null && c.reviewComment!.isNotEmpty);
-      // If the task was rejected and then re-resolved, label it as 'Rejected' based on reviewComment presence
-      bool wasRejected = c.reviewComment != null && c.reviewComment!.isNotEmpty;
+      bool isRejected = c.status == ComplaintStatus.rejected;
       events.add({
         'time': c.reviewedAt!,
-        'icon': (rejectedEvent || wasRejected) ? Icons.cancel_rounded : Icons.verified_rounded,
-        'color': (rejectedEvent || wasRejected) ? Colors.red : Colors.teal,
-        'title': '${(rejectedEvent || wasRejected) ? "Rejected" : "Reviewed"} on ${dateFormat.format(c.reviewedAt!)} at ${timeFormat.format(c.reviewedAt!)}',
-        'subtitle': (rejectedEvent || wasRejected) ? 'Work was rejected.' : 'Work was verified and approved.',
+        'icon': isRejected ? Icons.cancel_rounded : Icons.verified_rounded,
+        'color': isRejected ? Colors.red : Colors.teal,
+        'title': isRejected ? 'Rejected on ${dateFormat.format(c.reviewedAt!)} at ${timeFormat.format(c.reviewedAt!)}' : 'Approved on ${dateFormat.format(c.reviewedAt!)} at ${timeFormat.format(c.reviewedAt!)}',
+        'subtitle': isRejected ? 'Work was rejected.' : 'Work was verified and approved.',
       });
     }
 

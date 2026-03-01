@@ -974,14 +974,13 @@ class _ContractorComplaintDetailsPageState
     }
 
     if (c.reviewedAt != null) {
-      bool wasRejected = c.status == ComplaintStatus.rejected || (c.reviewComment != null && c.reviewComment!.isNotEmpty);
-      bool rejectedEvent = wasRejected;
+      bool isRejected = c.status == ComplaintStatus.rejected;
       events.add({
         'time': c.reviewedAt!,
-        'icon': rejectedEvent ? Icons.cancel_rounded : Icons.verified_rounded,
-        'color': rejectedEvent ? Colors.red : Colors.teal,
-        'title': '${rejectedEvent ? "Rejected" : "Reviewed"} on ${dateFormat.format(c.reviewedAt!)} at ${timeFormat.format(c.reviewedAt!)}',
-        'subtitle': rejectedEvent ? 'Work was rejected.' : 'Work was verified and approved.',
+        'icon': isRejected ? Icons.cancel_rounded : Icons.verified_rounded,
+        'color': isRejected ? Colors.red : Colors.teal,
+        'title': isRejected ? 'Rejected on ${dateFormat.format(c.reviewedAt!)} at ${timeFormat.format(c.reviewedAt!)}' : 'Approved on ${dateFormat.format(c.reviewedAt!)} at ${timeFormat.format(c.reviewedAt!)}',
+        'subtitle': isRejected ? 'Work was rejected.' : 'Work was verified and approved.',
       });
     }
 

@@ -8,8 +8,8 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_city/core/config/api_config.dart';
 import 'package:smart_city/features/auth/google_auth_helper.dart';
-import 'package:smart_city/features/auth/google_otp_role_page.dart';
 import 'package:smart_city/features/auth/forgot_password_page.dart';
+import 'package:smart_city/features/auth/google_otp_verify_page.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
@@ -76,6 +76,14 @@ class _LoginPageState extends State<LoginPage> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', token);
         await prefs.setString('role', _selectedRole.toLowerCase().trim());
+        await prefs.setString('currentUserEmail', _emailController.text.trim().toLowerCase());
+        
+        // Log this login using scoped key
+        final historyKey = 'login_history_${_emailController.text.trim().toLowerCase()}_${_selectedRole.toLowerCase().trim()}';
+        final loginHistory = prefs.getString(historyKey);
+        List<dynamic> logs = loginHistory != null ? jsonDecode(loginHistory) : [];
+        logs.add(DateTime.now().toIso8601String());
+        await prefs.setString(historyKey, jsonEncode(logs));
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -117,74 +125,81 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
     try {
       final accountData = await signInWithGoogle();
-      if (accountData == null) return; // User cancelled
+      if (accountData == null) {
+        setState(() => _isLoading = false);
+        return; // User cancelled
+      }
 
-      // Ask backend what to do based on whether email already exists
+      // We directly pass the selected role and contractor type to the backend.
+      // If the email doesn't have an account with this role, the backend creates it.
+      // If it does, it simply logs them in.
       final res = await http.post(
-        Uri.parse(ApiConfig.googleInitiateUrl),
+        Uri.parse('${ApiConfig.baseUrl}/auth/google/login'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': accountData['email'],
           'name': accountData['name'],
           'google_id': accountData['google_id'],
+          'role': _selectedRole.toLowerCase(),
+          'contractor_type': _selectedContractorType,
         }),
       );
 
-      if (res.statusCode != 200) {
-        final error = jsonDecode(res.body)['detail'] ?? 'Failed to initiate Google login';
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(error), backgroundColor: Colors.red),
-          );
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+
+        if (body['action'] == 'require_otp') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(body['message'] ?? 'OTP sent to email.')),
+            );
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => GoogleOtpVerifyPage(
+                  email: accountData['email']!,
+                  name: accountData['name']!,
+                  googleId: accountData['google_id']!,
+                  role: _selectedRole,
+                  contractorType: _selectedContractorType,
+                ),
+              ),
+            );
+          }
+          return;
         }
-        return;
-      }
 
-      final body = jsonDecode(res.body);
-      final action = body['action'];
-
-      if (action == 'direct_login') {
-        // ✅ User exists with one role — just log them in
         final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', body['token']);
+        await prefs.setString('token', body['access_token']);
+        await prefs.setString('role', _selectedRole.toLowerCase().trim());
+        final email = accountData['email']!.toLowerCase();
+        await prefs.setString('currentUserEmail', email);
+        
+        // Log this login using scoped key
+        final historyKey = 'login_history_${email}_${_selectedRole.toLowerCase().trim()}';
+        final loginHistory = prefs.getString(historyKey);
+        List<dynamic> logs = loginHistory != null ? jsonDecode(loginHistory) : [];
+        logs.add(DateTime.now().toIso8601String());
+        await prefs.setString(historyKey, jsonEncode(logs));
+
         if (mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Google Login Successful!')),
+          );
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => body['role'] == 'contractor'
+              builder: (_) => _selectedRole == 'Contractor'
                   ? const ContractorDashboardPage()
                   : const HomePage(),
             ),
           );
         }
-      } else if (action == 'choose_role') {
-        // 🔽 Email known, just pick role (no OTP)
+      } else {
+        final error = jsonDecode(res.body)['detail'] ?? 'Failed to login with Google';
         if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => GoogleOtpRolePage(
-                email: accountData['email']!,
-                name: accountData['name']!,
-                googleId: accountData['google_id']!,
-                skipOtp: true,
-              ),
-            ),
-          );
-        }
-      } else if (action == 'otp_required') {
-        // 📧 New email — OTP + role
-        if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => GoogleOtpRolePage(
-                email: accountData['email']!,
-                name: accountData['name']!,
-                googleId: accountData['google_id']!,
-                skipOtp: false,
-              ),
-            ),
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(error), backgroundColor: Colors.red),
           );
         }
       }

@@ -8,6 +8,7 @@ import '../../../auth/login/presentation/pages/login_page.dart';
 import '../../../auth/forgot_password_page.dart';
 import '../../../reports/presentation/providers/complaints_provider.dart';
 import '../../../reports/domain/models/complaint.dart';
+import '../../../../features/profile/presentation/pages/filtered_complaints_page.dart';
 
 class ContractorProfilePage extends StatefulWidget {
   final String userName;
@@ -79,6 +80,16 @@ class _ContractorProfilePageState extends State<ContractorProfilePage> {
 
   Future<void> _handleLogout() async {
     final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('currentUserEmail') ?? widget.userEmail.toLowerCase();
+    final role = prefs.getString('role') ?? 'contractor';
+    
+    // Log this logout using scoped key
+    final historyKey = 'logout_history_${email.toLowerCase()}_$role';
+    final logoutHistory = prefs.getString(historyKey);
+    List<dynamic> logs = logoutHistory != null ? jsonDecode(logoutHistory) : [];
+    logs.add(DateTime.now().toIso8601String());
+    await prefs.setString(historyKey, jsonEncode(logs));
+
     await prefs.remove('token');
     if (mounted) {
       Navigator.pushAndRemoveUntil(
@@ -128,6 +139,10 @@ class _ContractorProfilePageState extends State<ContractorProfilePage> {
         headers: {'Authorization': 'Bearer $token'},
       );
       if (res.statusCode == 200 && mounted) {
+        final email = prefs.getString('currentUserEmail') ?? widget.userEmail.toLowerCase();
+        final role = prefs.getString('role') ?? 'contractor';
+        await prefs.remove('login_history_${email.toLowerCase()}_$role');
+        await prefs.remove('logout_history_${email.toLowerCase()}_$role');
         await prefs.remove('token');
         Navigator.pushAndRemoveUntil(
           context,
@@ -288,20 +303,36 @@ class _ContractorProfilePageState extends State<ContractorProfilePage> {
                     Row(
                       children: [
                         Expanded(child: _buildStatCard('Tasks\nTaken', taken.toString(),
-                            Icons.assignment_rounded, Colors.blueAccent)),
+                            Icons.assignment_rounded, Colors.blueAccent, onTap: () {
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => FilteredComplaintsPage(
+                                title: 'Tasks Taken', isContractor: true, filterStatuses: null, // All taken
+                              )));
+                            })),
                         const SizedBox(width: 10),
                         Expanded(child: _buildStatCard('In\nProgress', inProgress.toString(),
-                            Icons.sync_rounded, Colors.orangeAccent)),
+                            Icons.sync_rounded, Colors.orangeAccent, onTap: () {
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => FilteredComplaintsPage(
+                                title: 'In Progress Tasks', isContractor: true, filterStatuses: const [ComplaintStatus.inProgress, ComplaintStatus.rejected],
+                              )));
+                            })),
                       ],
                     ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
                         Expanded(child: _buildStatCard('Completed\nTasks', completed.toString(),
-                            Icons.check_circle_outline, Colors.greenAccent)),
+                            Icons.check_circle_outline, Colors.greenAccent, onTap: () {
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => FilteredComplaintsPage(
+                                title: 'Completed Tasks', isContractor: true, filterStatuses: const [ComplaintStatus.resolved],
+                              )));
+                            })),
                         const SizedBox(width: 10),
                         Expanded(child: _buildStatCard('Reviewed\nTasks', reviewed.toString(),
-                            Icons.verified, Colors.tealAccent)),
+                            Icons.verified, Colors.tealAccent, onTap: () {
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => FilteredComplaintsPage(
+                                title: 'Reviewed Tasks', isContractor: true, filterStatuses: const [ComplaintStatus.reviewed],
+                              )));
+                            })),
                       ],
                     ),
                   ],
@@ -346,19 +377,26 @@ class _ContractorProfilePageState extends State<ContractorProfilePage> {
                               style: TextStyle(
                                   color: Colors.white.withOpacity(0.6),
                                   fontSize: 14)),
-                          const Spacer(),
-                          _isLoadingProfile
-                              ? const SizedBox(
-                                  height: 12,
-                                  width: 80,
-                                  child: LinearProgressIndicator(
-                                      color: Color(0xFF4FC3F7),
-                                      backgroundColor: Colors.white12))
-                              : Text(_mobileNumber,
-                                  style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600)),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: _isLoadingProfile
+                                ? const Align(
+                                    alignment: Alignment.centerRight,
+                                    child: SizedBox(
+                                        height: 12,
+                                        width: 80,
+                                        child: LinearProgressIndicator(
+                                            color: Color(0xFF4FC3F7),
+                                            backgroundColor: Colors.white12)),
+                                  )
+                                : Text(_mobileNumber,
+                                    textAlign: TextAlign.right,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w600)),
+                          ),
                           const SizedBox(width: 8),
                           GestureDetector(
                             onTap: _startMobileVerificationFlow,
@@ -432,9 +470,11 @@ class _ContractorProfilePageState extends State<ContractorProfilePage> {
                           child: Text(
                             _contractorType,
                             textAlign: TextAlign.end,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 2,
                             style: const TextStyle(
                                 color: Colors.white,
-                                fontSize: 16,
+                                fontSize: 15,
                                 fontWeight: FontWeight.w600),
                           ),
                         ),
@@ -506,50 +546,53 @@ class _ContractorProfilePageState extends State<ContractorProfilePage> {
   }
 
   Widget _buildStatCard(
-      String title, String count, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF18181B).withOpacity(0.8),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.5), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.1),
-            blurRadius: 10,
-            spreadRadius: 2,
-          )
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Icon + number on the same line
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 6),
-              Text(
-                count,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+      String title, String count, IconData icon, Color color, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF18181B).withOpacity(0.8),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.5), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.1),
+              blurRadius: 10,
+              spreadRadius: 2,
+            )
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Icon + number on the same line
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(width: 6),
+                Text(
+                  count,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            title,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.65),
-              fontSize: 11,
-              height: 1.3,
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 6),
+            Text(
+              title,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.65),
+                fontSize: 11,
+                height: 1.3,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -566,13 +609,18 @@ class _ContractorProfilePageState extends State<ContractorProfilePage> {
             fontSize: 14,
           ),
         ),
-        const Spacer(),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
+        const SizedBox(width: 16),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],

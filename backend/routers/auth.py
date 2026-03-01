@@ -77,7 +77,7 @@ def google_initiate(data: schemas.GoogleInitiateRequest, db: Session = Depends(d
             # ✅ Exactly one account → direct login
             user = existing_users[0]
             access_token = auth.create_access_token(
-                data={"sub": user.email},
+                data={"sub": user.email, "role": user.role, "contractor_type": user.contractor_type},
                 expires_delta=timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
             )
             return {
@@ -125,20 +125,24 @@ def google_select_role(data: schemas.GoogleSelectRoleRequest, db: Session = Depe
 
     if not user:
         # First time using this role — create account (email already verified)
+        existing_any_role = db.query(models.User).filter(models.User.email == data.email).first()
+        inherited_mobile = existing_any_role.mobile_number if existing_any_role else None
+        
         dummy_password = secrets.token_urlsafe(16)
         user = models.User(
             email=data.email,
             username=data.name,
             password_hash=auth.get_password_hash(dummy_password),
             role=data.role,
-            contractor_type=data.contractor_type
+            contractor_type=data.contractor_type,
+            mobile_number=inherited_mobile
         )
         db.add(user)
         db.commit()
         db.refresh(user)
 
     access_token = auth.create_access_token(
-        data={"sub": user.email},
+        data={"sub": user.email, "role": user.role, "contractor_type": user.contractor_type},
         expires_delta=timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     return {
@@ -214,7 +218,7 @@ def forgot_password_verify_otp(data: schemas.ForgotPasswordVerifyOtp, db: Sessio
         raise HTTPException(status_code=404, detail="User not found.")
 
     access_token = auth.create_access_token(
-        data={"sub": user.email},
+        data={"sub": user.email, "role": user.role, "contractor_type": user.contractor_type},
         expires_delta=timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     return {
@@ -251,7 +255,7 @@ def forgot_password_reset(data: schemas.ForgotPasswordReset, db: Session = Depen
 
     # Return a token for the first/primary account
     access_token = auth.create_access_token(
-        data={"sub": users[0].email},
+        data={"sub": users[0].email, "role": users[0].role, "contractor_type": users[0].contractor_type},
         expires_delta=timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     return {
@@ -272,13 +276,18 @@ def register(user: schemas.UserCreate, db: Session = Depends(database.get_db)):
     if db_user:
         raise HTTPException(status_code=400, detail="User already registered with this role")
     
+    # Check if they have another role to inherit mobile number
+    existing_any_role = db.query(models.User).filter(models.User.email == user.email).first()
+    inherited_mobile = existing_any_role.mobile_number if existing_any_role else None
+
     hashed_password = auth.get_password_hash(user.password)
     new_user = models.User(
         email=user.email,
         username=user.username,
         password_hash=hashed_password,
         role=user.role,
-        contractor_type=user.contractor_type
+        contractor_type=user.contractor_type,
+        mobile_number=inherited_mobile
     )
     db.add(new_user)
     db.commit()
@@ -294,14 +303,14 @@ def login(user_credentials: schemas.UserLogin, db: Session = Depends(database.ge
     ).first()
     
     if not user:
-        raise HTTPException(status_code=400, detail="Invalid credentials")
+        raise HTTPException(status_code=400, detail="No account found for this email and role combination.")
     
     if not auth.verify_password(user_credentials.password, user.password_hash):
-        raise HTTPException(status_code=400, detail="Invalid credentials")
+        raise HTTPException(status_code=400, detail="Incorrect password.")
     
     access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.email, "role": user.role, "contractor_type": user.contractor_type}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -355,6 +364,10 @@ def google_verify_otp(data: schemas.GoogleOtpVerify, db: Session = Depends(datab
     ).first()
 
     if not user:
+        # Check if they have another role to inherit mobile number
+        existing_any_role = db.query(models.User).filter(models.User.email == data.email).first()
+        inherited_mobile = existing_any_role.mobile_number if existing_any_role else None
+
         dummy_password = secrets.token_urlsafe(16)
         hashed_password = auth.get_password_hash(dummy_password)
         user = models.User(
@@ -362,7 +375,8 @@ def google_verify_otp(data: schemas.GoogleOtpVerify, db: Session = Depends(datab
             username=data.name,
             password_hash=hashed_password,
             role=data.role,
-            contractor_type=data.contractor_type
+            contractor_type=data.contractor_type,
+            mobile_number=inherited_mobile
         )
         db.add(user)
         db.commit()
@@ -370,13 +384,13 @@ def google_verify_otp(data: schemas.GoogleOtpVerify, db: Session = Depends(datab
 
     access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.email, "role": user.role, "contractor_type": user.contractor_type}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
 
-# ─── Legacy single-step Google endpoint (kept for compatibility) ──────────────
-@router.post("/google", response_model=schemas.Token)
-def google_login(google_data: schemas.UserGoogleLogin, db: Session = Depends(database.get_db)):
+# ─── Google Direct Login (Sends OTP if role not found) ───────────────────────────
+@router.post("/google/login")
+def google_direct_login(google_data: schemas.UserGoogleLogin, db: Session = Depends(database.get_db)):
     user = db.query(models.User).filter(
         models.User.email == google_data.email,
         models.User.role == google_data.role,
@@ -384,24 +398,74 @@ def google_login(google_data: schemas.UserGoogleLogin, db: Session = Depends(dat
     ).first()
 
     if not user:
-        dummy_password = secrets.token_urlsafe(16)
-        hashed_password = auth.get_password_hash(dummy_password)
-        user = models.User(
-            email=google_data.email,
-            username=google_data.name,
-            password_hash=hashed_password,
-            role=google_data.role,
-            contractor_type=google_data.contractor_type
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+        if not SMTP_USER or not SMTP_PASS:
+            raise HTTPException(
+                status_code=500,
+                detail="Email service not configured. Set SMTP_USER and SMTP_PASS in .env"
+            )
+
+        otp = str(secrets.randbelow(900000) + 100000)
+        _otp_store[google_data.email] = {
+            "otp": otp,
+            "name": google_data.name,
+            "google_id": google_data.google_id,
+            "expires_at": datetime.utcnow() + timedelta(minutes=10),
+        }
+        try:
+            _send_otp_email(google_data.email, otp, google_data.name)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+        return {
+            "action": "require_otp", 
+            "message": "No account found for this role. We have sent an OTP to register you."
+        }
 
     access_token_expires = timedelta(minutes=auth.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = auth.create_access_token(
-        data={"sub": user.email}, expires_delta=access_token_expires
+        data={"sub": user.email, "role": user.role, "contractor_type": user.contractor_type}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "action": "direct_login",
+        "access_token": access_token, 
+        "token_type": "bearer"
+    }
+
+# ─── Google Direct Register ────────────────────────
+@router.post("/google/register")
+def google_direct_register(google_data: schemas.UserGoogleLogin, db: Session = Depends(database.get_db)):
+    user = db.query(models.User).filter(
+        models.User.email == google_data.email,
+        models.User.role == google_data.role,
+        models.User.contractor_type == google_data.contractor_type
+    ).first()
+
+    if user:
+        role_desc = google_data.contractor_type if google_data.role == "contractor" else "Citizen"
+        raise HTTPException(status_code=400, detail=f"You are already registered as a {role_desc}. Please login.")
+
+    if not SMTP_USER or not SMTP_PASS:
+        raise HTTPException(
+            status_code=500,
+            detail="Email service not configured. Set SMTP_USER and SMTP_PASS in .env"
+        )
+
+    otp = str(secrets.randbelow(900000) + 100000)
+    _otp_store[google_data.email] = {
+        "otp": otp,
+        "name": google_data.name,
+        "google_id": google_data.google_id,
+        "expires_at": datetime.utcnow() + timedelta(minutes=10),
+    }
+    try:
+        _send_otp_email(google_data.email, otp, google_data.name)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+    return {
+        "action": "require_otp", 
+        "message": "We have sent an OTP to register you."
+    }
 
 # ─── Get Current User Profile ────────────────────────────────────────────────
 @router.get("/me", response_model=schemas.UserResponse)

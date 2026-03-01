@@ -51,12 +51,20 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
-        if email is None:
+        role: str = payload.get("role")
+        contractor_type = payload.get("contractor_type")
+        if email is None or role is None:
             raise credentials_exception
     except jwt.JWTError:
         raise credentials_exception
     
-    user = db.query(models.User).filter(models.User.email == email).first()
+    # Securely fetch the exact role profile the user authenticated with
+    user = db.query(models.User).filter(
+        models.User.email == email,
+        models.User.role == role,
+        models.User.contractor_type == contractor_type
+    ).first()
+    
     if user is None:
         raise credentials_exception
     return user

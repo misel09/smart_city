@@ -6,10 +6,10 @@ import 'package:smart_city/features/auth/login/presentation/pages/login_page.dar
 import '../widgets/password_strength_indicator.dart';
 import 'package:smart_city/core/config/api_config.dart';
 import 'package:smart_city/features/auth/google_auth_helper.dart';
-import 'package:smart_city/features/auth/google_otp_role_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:smart_city/features/home/presentation/pages/home_page.dart';
 import 'package:smart_city/features/contractor/presentation/pages/contractor_dashboard_page.dart';
+import 'package:smart_city/features/auth/google_otp_verify_page.dart';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 
@@ -462,34 +462,78 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _isLoading = true);
     try {
       final accountData = await signInWithGoogle();
-      if (accountData == null) return; // User cancelled
+      if (accountData == null) {
+        setState(() => _isLoading = false);
+        return; // User cancelled
+      }
 
-      // Step 1: Send OTP to the Google email
-      final sendRes = await http.post(
-        Uri.parse(ApiConfig.googleSendOtpUrl),
+      // We directly pass the selected role and contractor type to the backend.
+      // If the email doesn't have an account with this role, the backend creates it.
+      // If it does, it simply logs them in.
+      final res = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/auth/google/register'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'email': accountData['email'],
           'name': accountData['name'],
           'google_id': accountData['google_id'],
+          'role': _selectedRole.toLowerCase(),
+          'contractor_type': _selectedContractorType,
         }),
       );
 
-      if (sendRes.statusCode == 200) {
+      if (res.statusCode == 200) {
+        final body = jsonDecode(res.body);
+
+        if (body['action'] == 'require_otp') {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(body['message'] ?? 'OTP sent to email.')),
+            );
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => GoogleOtpVerifyPage(
+                  email: accountData['email']!,
+                  name: accountData['name']!,
+                  googleId: accountData['google_id']!,
+                  role: _selectedRole,
+                  contractorType: _selectedContractorType,
+                ),
+              ),
+            );
+          }
+          return;
+        }
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('token', body['access_token']);
+        await prefs.setString('role', _selectedRole.toLowerCase().trim());
+        final email = accountData['email']!.toLowerCase();
+        await prefs.setString('currentUserEmail', email);
+        
+        // Log this login using scoped key
+        final historyKey = 'login_history_${email}_${_selectedRole.toLowerCase().trim()}';
+        final loginHistory = prefs.getString(historyKey);
+        List<dynamic> logs = loginHistory != null ? jsonDecode(loginHistory) : [];
+        logs.add(DateTime.now().toIso8601String());
+        await prefs.setString(historyKey, jsonEncode(logs));
+
         if (mounted) {
-          Navigator.push(
+           ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Google Registration Successful!')),
+          );
+          Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (_) => GoogleOtpRolePage(
-                email: accountData['email']!,
-                name: accountData['name']!,
-                googleId: accountData['google_id']!,
-              ),
+              builder: (_) => _selectedRole == 'Contractor'
+                  ? const ContractorDashboardPage()
+                  : const HomePage(),
             ),
           );
         }
       } else {
-        final error = jsonDecode(sendRes.body)['detail'] ?? 'Failed to send OTP';
+        final error = jsonDecode(res.body)['detail'] ?? 'Failed to register with Google';
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(error), backgroundColor: Colors.red),

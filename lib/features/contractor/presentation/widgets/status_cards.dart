@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../features/reports/presentation/providers/complaints_provider.dart';
 import '../../../../features/reports/domain/models/complaint.dart';
+import '../../../../features/profile/presentation/pages/filtered_complaints_page.dart';
 
 class StatusCards extends StatelessWidget {
   const StatusCards({super.key});
@@ -28,6 +29,13 @@ class StatusCards extends StatelessWidget {
                 count: pending.toString().padLeft(1, '0'),
                 baseColor: const Color(0xFF29B6F6),
                 icon: Icons.pending_actions_rounded,
+                onTap: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => FilteredComplaintsPage(
+                    title: 'Pending Tasks',
+                    isContractor: true,
+                    filterStatuses: const [ComplaintStatus.inProgress, ComplaintStatus.rejected],
+                  )));
+                },
               ),
               const SizedBox(width: 8),
               _buildPillCard(
@@ -35,6 +43,14 @@ class StatusCards extends StatelessWidget {
                 count: priority.toString().padLeft(1, '0'),
                 baseColor: const Color(0xFFEF5350),
                 icon: Icons.priority_high_rounded,
+                onTap: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => FilteredComplaintsPage(
+                    title: 'Priority Tasks',
+                    isContractor: true,
+                    filterStatuses: null,
+                    filterPriority: 'High',
+                  )));
+                },
               ),
               const SizedBox(width: 8),
               _buildPillCard(
@@ -42,6 +58,13 @@ class StatusCards extends StatelessWidget {
                 count: resolved.toString().padLeft(1, '0'),
                 baseColor: const Color(0xFF66BB6A),
                 icon: Icons.check_circle_rounded,
+                onTap: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => FilteredComplaintsPage(
+                    title: 'Resolved Tasks',
+                    isContractor: true,
+                    filterStatuses: const [ComplaintStatus.resolved],
+                  )));
+                },
               ),
             ],
           ),
@@ -55,41 +78,49 @@ class StatusCards extends StatelessWidget {
     required String count,
     required Color baseColor,
     required IconData icon,
+    required VoidCallback onTap,
   }) {
     return Expanded(
-      child: Container(
-        decoration: BoxDecoration(
-          color: baseColor.withOpacity(0.1),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: baseColor.withOpacity(0.3), width: 1.5),
-        ),
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: baseColor, size: 20),
-            const SizedBox(height: 6),
-            Text(
-              count,
-              style: TextStyle(
-                color: baseColor,
-                fontSize: 22,
-                fontWeight: FontWeight.w900,
-                height: 1,
-              ),
+          child: Container(
+            decoration: BoxDecoration(
+              color: baseColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: baseColor.withOpacity(0.3), width: 1.5),
             ),
-            const SizedBox(height: 2),
-            Text(
-              title,
-              style: TextStyle(
-                color: baseColor.withOpacity(0.8),
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.5,
-              ),
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: baseColor, size: 20),
+                const SizedBox(height: 6),
+                Text(
+                  count,
+                  style: TextStyle(
+                    color: baseColor,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: baseColor.withOpacity(0.8),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

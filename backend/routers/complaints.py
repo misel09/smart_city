@@ -128,17 +128,18 @@ def get_nearby_complaints(
             
     all_complaints = query.all()
     
-    # Calculate distance and store in a list of tuples (complaint, distance)
+    # Calculate distance and store in a list of tuples (complaint, distance) if within 50km
     complaints_with_distance = []
     for c in all_complaints:
         try:
             c_lat = float(c.latitude)
             c_lng = float(c.longitude)
             dist = haversine_distance(lat, lng, c_lat, c_lng)
-            complaints_with_distance.append((c, dist))
+            if dist <= 50.0:  # Only include if within 50 km
+                complaints_with_distance.append((c, dist))
         except (ValueError, TypeError):
-            # If coordinates are invalid, push them to the end
-            complaints_with_distance.append((c, float('inf')))
+            # If coordinates are invalid, skip them for nearby
+            pass
             
     # Sort by distance
     complaints_with_distance.sort(key=lambda x: x[1])

@@ -9,6 +9,7 @@ import '../../../../features/reports/presentation/providers/complaints_provider.
 import 'package:http/http.dart' as http;
 import '../../../../core/config/api_config.dart';
 import '../../../../features/reports/domain/models/complaint.dart';
+import 'filtered_complaints_page.dart';
 
 class ProfilePage extends StatefulWidget {
   final String userName;
@@ -70,6 +71,16 @@ class _ProfilePageState extends State<ProfilePage> {
 
   void _handleLogout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
+    final email = prefs.getString('currentUserEmail') ?? widget.userEmail.toLowerCase();
+    final role = prefs.getString('role') ?? 'user';
+    
+    // Log this logout using scoped key
+    final historyKey = 'logout_history_${email.toLowerCase()}_$role';
+    final logoutHistory = prefs.getString(historyKey);
+    List<dynamic> logs = logoutHistory != null ? jsonDecode(logoutHistory) : [];
+    logs.add(DateTime.now().toIso8601String());
+    await prefs.setString(historyKey, jsonEncode(logs));
+    
     await prefs.remove('token');
     if (context.mounted) {
       Navigator.pushAndRemoveUntil(
@@ -123,6 +134,10 @@ class _ProfilePageState extends State<ProfilePage> {
 
       if (response.statusCode == 200 && context.mounted) {
         // Successfully deleted
+        final email = prefs.getString('currentUserEmail') ?? widget.userEmail.toLowerCase();
+        final role = prefs.getString('role') ?? 'user';
+        await prefs.remove('login_history_${email.toLowerCase()}_$role');
+        await prefs.remove('logout_history_${email.toLowerCase()}_$role');
         await prefs.remove('token');
         Navigator.pushAndRemoveUntil(
           context,
@@ -223,17 +238,33 @@ class _ProfilePageState extends State<ProfilePage> {
                   children: [
                     Row(
                       children: [
-                        Expanded(child: _buildStatCard('Total', total.toString(), Icons.format_list_bulleted, Colors.blueAccent)),
+                        Expanded(child: _buildStatCard('Total', total.toString(), Icons.format_list_bulleted, Colors.blueAccent, onTap: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => FilteredComplaintsPage(
+                            title: 'Total Complaints', isContractor: false, filterStatuses: null, // All
+                          )));
+                        })),
                         const SizedBox(width: 10),
-                        Expanded(child: _buildStatCard('In Progress', inProgress.toString(), Icons.sync, Colors.orangeAccent)),
+                        Expanded(child: _buildStatCard('In Progress', inProgress.toString(), Icons.sync, Colors.orangeAccent, onTap: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => FilteredComplaintsPage(
+                            title: 'In Progress Complaints', isContractor: false, filterStatuses: const [ComplaintStatus.inProgress],
+                          )));
+                        })),
                       ],
                     ),
                     const SizedBox(height: 10),
                     Row(
                       children: [
-                        Expanded(child: _buildStatCard('Resolved', resolved.toString(), Icons.check_circle_outline, Colors.greenAccent)),
+                        Expanded(child: _buildStatCard('Resolved', resolved.toString(), Icons.check_circle_outline, Colors.greenAccent, onTap: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => FilteredComplaintsPage(
+                            title: 'Resolved Complaints', isContractor: false, filterStatuses: const [ComplaintStatus.resolved],
+                          )));
+                        })),
                         const SizedBox(width: 10),
-                        Expanded(child: _buildStatCard('Reviewed', reviewed.toString(), Icons.verified, Colors.tealAccent)),
+                        Expanded(child: _buildStatCard('Reviewed', reviewed.toString(), Icons.verified, Colors.tealAccent, onTap: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => FilteredComplaintsPage(
+                            title: 'Reviewed Complaints', isContractor: false, filterStatuses: const [ComplaintStatus.reviewed],
+                          )));
+                        })),
                       ],
                     ),
                   ],
@@ -268,8 +299,15 @@ class _ProfilePageState extends State<ProfilePage> {
                           const Icon(Icons.phone, color: Color(0xFF4FC3F7), size: 24),
                           const SizedBox(width: 16),
                           Text('Mobile Number', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 14)),
-                          const Spacer(),
-                          Text(_mobileNumber, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w600)),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              _mobileNumber, 
+                              textAlign: TextAlign.right, 
+                              overflow: TextOverflow.ellipsis, 
+                              style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600)
+                            ),
+                          ),
                           const SizedBox(width: 8),
                           GestureDetector(
                             onTap: () => _startMobileVerificationFlow(context),
@@ -364,50 +402,53 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildStatCard(String title, String count, IconData icon, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF18181B).withOpacity(0.8),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.5), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(0.1),
-            blurRadius: 10,
-            spreadRadius: 2,
-          )
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Icon + number on the same line
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Icon(icon, color: color, size: 20),
-              const SizedBox(width: 6),
-              Text(
-                count,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
+  Widget _buildStatCard(String title, String count, IconData icon, Color color, {VoidCallback? onTap}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF18181B).withOpacity(0.8),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.5), width: 1.5),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.1),
+              blurRadius: 10,
+              spreadRadius: 2,
+            )
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Icon + number on the same line
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(icon, color: color, size: 20),
+                const SizedBox(width: 6),
+                Text(
+                  count,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            title,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.65),
-              fontSize: 11,
-              height: 1.3,
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 6),
+            Text(
+              title,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.65),
+                fontSize: 11,
+                height: 1.3,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -424,13 +465,18 @@ class _ProfilePageState extends State<ProfilePage> {
             fontSize: 14,
           ),
         ),
-        const Spacer(),
-        Text(
-          value,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
+        const SizedBox(width: 16),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],
