@@ -78,7 +78,7 @@ class HomeHeader extends StatelessWidget {
                   context,
                   MaterialPageRoute(
                     builder: (_) => ProfilePage(
-                      userName: userName.isNotEmpty ? userName : 'User',
+                      userName: userName.isNotEmpty ? userName : 'Citizen',
                       userEmail: userEmail,
                     ),
                   ),

@@ -9,9 +9,10 @@ class User(Base):
     username = Column(String, index=True, nullable=True)
     email = Column(String, index=True, nullable=False)
     password_hash = Column(String)
-    role = Column(String, default="user")
+    role = Column(String, default="citizen")
     contractor_type = Column(String, nullable=True)
     mobile_number = Column(String, nullable=True)
+    district = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
@@ -29,13 +30,13 @@ class Complaint(Base):
     latitude = Column(String, nullable=False)
     longitude = Column(String, nullable=False)
     address = Column(String, nullable=False)
+    district = Column(String, nullable=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
     image_path = Column(String, nullable=True)
     # Link complaint to the user who submitted it
     user_email = Column(String, nullable=True, index=True)
-    # New fields for Priority, Due Time, and Task Assignment
+    # New fields for Priority and Task Assignment
     priority = Column(String, nullable=True, default="Normal")
-    due_date = Column(DateTime(timezone=True), nullable=True) # or due_time
     contractor_email = Column(String, nullable=True, index=True)
 
     # Resolution fields

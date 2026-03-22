@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,6 +11,7 @@ import '../../../reports/domain/models/complaint.dart';
 import '../providers/complaints_provider.dart';
 import '../widgets/status_timeline.dart';
 import '../../../home/presentation/pages/review_details_page.dart';
+import 'report_preview_page.dart';
 
 class ComplaintDetailsPage extends StatefulWidget {
   final Complaint complaint;
@@ -20,9 +23,63 @@ class ComplaintDetailsPage extends StatefulWidget {
 }
 
 class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
+  String? _currentUserEmail;
+  String? _currentUserRole;
+  bool _isFetchingEmail = true;
+
+  // Freshly fetched reporter details
+  String? _complainantName;
+  String? _complainantMobile;
+  bool _isFetchingUser = true;
+
   @override
   void initState() {
     super.initState();
+    _fetchCurrentUserEmail();
+    _fetchReporterInfo();
+  }
+
+  Future<void> _fetchCurrentUserEmail() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _currentUserEmail = prefs.getString('currentUserEmail');
+        _currentUserRole = prefs.getString('role');
+        _isFetchingEmail = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _isFetchingEmail = false);
+    }
+  }
+
+  Future<void> _fetchReporterInfo() async {
+    final email = widget.complaint.userEmail;
+    if (email == null || email.isEmpty) {
+      if (mounted) setState(() => _isFetchingUser = false);
+      return;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+      
+      final res = await http.get(
+        Uri.parse(ApiConfig.userInfoUrl(email)),
+        headers: {'Authorization': 'Bearer $token'},
+      ).timeout(const Duration(seconds: 8));
+
+      if (res.statusCode == 200 && mounted) {
+        final data = jsonDecode(res.body);
+        setState(() {
+          _complainantName = data['username'] as String?;
+          _complainantMobile = data['mobile_number'] as String?;
+        });
+      }
+    } catch (_) {
+      // Fallback to complaint data
+    } finally {
+      if (mounted) setState(() => _isFetchingUser = false);
+    }
   }
 
   @override
@@ -72,7 +129,49 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 40), // balance
+                    if (!_isFetchingEmail &&
+                        _currentUserRole != null &&
+                        _currentUserRole!.toLowerCase().contains('officer'))
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ReportPreviewPage(
+                                complaint: widget.complaint,
+                                complainantName: _complainantName,
+                              ),
+                            ),
+                          );
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4FC3F7).withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: const Color(0xFF4FC3F7).withOpacity(0.3)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.picture_as_pdf_rounded,
+                                  color: Color(0xFF4FC3F7), size: 16),
+                              SizedBox(width: 4),
+                              Text(
+                                'Report',
+                                style: TextStyle(
+                                    color: Color(0xFF4FC3F7),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    else
+                      const SizedBox(width: 40), // balance
                   ],
                 ),
               ),
@@ -112,74 +211,98 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
                       ),
                       const SizedBox(height: 28),
 
-                      // ── Priority & Due Date ────────────────────────────────
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: widget.complaint.priority == 'Urgent' 
-                                    ? Colors.red.withOpacity(0.15)
-                                    : widget.complaint.priority == 'High'
-                                        ? Colors.orange.withOpacity(0.15)
-                                        : Colors.white.withOpacity(0.07),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                    color: widget.complaint.priority == 'Urgent' 
-                                        ? Colors.red.withOpacity(0.5)
-                                        : widget.complaint.priority == 'High'
-                                            ? Colors.orange.withOpacity(0.5)
-                                            : Colors.white.withOpacity(0.1)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                      // ── Priority ────────────────────────────────
+                      _infoCard(
+                        label: 'Priority',
+                        value: widget.complaint.priority,
+                        color: widget.complaint.priority == 'Urgent'
+                            ? Colors.red
+                            : widget.complaint.priority == 'High'
+                                ? Colors.orange
+                                : null,
+                      ),
+                      const SizedBox(height: 28),
+
+                      // ── Reported By ────────────────────────────────
+                      _sectionLabel('REPORTED BY'),
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(18),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.06),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: Colors.white.withOpacity(0.1)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.08),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(Icons.person_rounded, color: Colors.white70, size: 22),
+                                ),
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _complainantName ?? widget.complaint.userName ?? 'You',
+                                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      const Text('Citizen', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 14),
+                            const Divider(color: Colors.white10, height: 1),
+                            const SizedBox(height: 12),
+                            
+                            // Email
+                            _contactRow(icon: Icons.email_rounded, text: widget.complaint.userEmail ?? ''),
+                            
+                            // Mobile
+                            const SizedBox(height: 10),
+                            if (_isFetchingUser)
+                              Row(
                                 children: [
-                                  const Text('Priority', style: TextStyle(color: Colors.white60, fontSize: 12)),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    widget.complaint.priority,
-                                    style: TextStyle(
-                                      color: widget.complaint.priority == 'Urgent' || widget.complaint.priority == 'High'
-                                          ? Colors.white
-                                          : Colors.white70,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
+                                  const Icon(Icons.phone_rounded, color: Colors.white38, size: 16),
+                                  const SizedBox(width: 10),
+                                  SizedBox(
+                                    height: 12,
+                                    width: 80,
+                                    child: LinearProgressIndicator(
+                                      color: Colors.white24,
+                                      backgroundColor: Colors.white.withOpacity(0.05),
+                                      borderRadius: BorderRadius.circular(4),
                                     ),
                                   ),
-                                ]
+                                ],
+                              )
+                            else if ((_complainantMobile ?? widget.complaint.userMobile) != null &&
+                                (_complainantMobile ?? widget.complaint.userMobile)!.isNotEmpty)
+                              _contactRow(
+                                icon: Icons.phone_rounded, 
+                                text: (_complainantMobile ?? widget.complaint.userMobile)!
+                              )
+                            else
+                              _contactRow(
+                                icon: Icons.phone_rounded, 
+                                text: 'Mobile not added in profile',
+                                dimmed: true,
                               ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.07),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.white.withOpacity(0.1)),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Due By', style: TextStyle(color: Colors.white60, fontSize: 12)),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    widget.complaint.dueDate != null 
-                                      ? '${dateFormat.format(widget.complaint.dueDate!)}'
-                                      : 'Not Set',
-                                    style: const TextStyle(
-                                      color: Colors.white70,
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ]
-                              ),
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                       const SizedBox(height: 28),
 
@@ -189,7 +312,7 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
                       // ── Contractor Details (citizens only, when In Progress or beyond) ──
                       if (widget.complaint.status != ComplaintStatus.registered &&
                           widget.complaint.contractorEmail != null) ...[
-                        _sectionLabel('Assigned Contractor'),
+                        _sectionLabel('ASSIGNED CONTRACTOR'),
                         const SizedBox(height: 12),
                         Container(
                           width: double.infinity,
@@ -197,14 +320,14 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
                           decoration: BoxDecoration(
                             gradient: LinearGradient(
                               colors: [
-                                const Color(0xFF10B981).withOpacity(0.10),
-                                const Color(0xFF10B981).withOpacity(0.04),
+                                const Color(0xFF00B4DB).withOpacity(0.08),
+                                const Color(0xFF0083B0).withOpacity(0.04),
                               ],
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                             ),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0xFF10B981).withOpacity(0.3)),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFF00B4DB).withOpacity(0.2)),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -426,7 +549,11 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
                         ),
                         
                         // ── Review Button ──────────────────────────────────────
-                        if (widget.complaint.status == ComplaintStatus.resolved) ...[
+                        if (!_isFetchingEmail &&
+                            _currentUserEmail != null &&
+                            _currentUserEmail!.toLowerCase().trim() == widget.complaint.userEmail?.toLowerCase().trim() &&
+                            (_currentUserRole == null || !_currentUserRole!.toLowerCase().contains('officer')) &&
+                            widget.complaint.status == ComplaintStatus.resolved) ...[
                           const SizedBox(height: 32),
                           Container(
                             height: 54,
@@ -475,6 +602,42 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
                           ),
                         ],
                         
+                        // ── Delete Button ──────────────────────────────────────
+                        if (!_isFetchingEmail && 
+                            _currentUserEmail != null && 
+                            _currentUserEmail!.toLowerCase().trim() == widget.complaint.userEmail?.toLowerCase().trim() &&
+                            widget.complaint.status == ComplaintStatus.registered) ...[
+                          const SizedBox(height: 12),
+                          Container(
+                            height: 54,
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                              color: Colors.red.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.red.withOpacity(0.3)),
+                            ),
+                            child: ElevatedButton.icon(
+                              onPressed: () => _confirmDelete(context),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.transparent,
+                                shadowColor: Colors.transparent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                              ),
+                              icon: const Icon(Icons.delete_outline_rounded, size: 20, color: Colors.redAccent),
+                              label: const Text(
+                                'Delete Issue',
+                                style: TextStyle(
+                                  color: Colors.redAccent,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                        
                         const SizedBox(height: 32),
                       ],
                     ],
@@ -491,11 +654,70 @@ class _ComplaintDetailsPageState extends State<ComplaintDetailsPage> {
   Widget _sectionLabel(String text) => Text(
         text,
         style: const TextStyle(
-            color: Colors.white60,
-            fontSize: 12,
+            color: Colors.white54,
+            fontSize: 11,
             fontWeight: FontWeight.w700,
-            letterSpacing: 1),
+            letterSpacing: 1.4),
       );
+
+  Widget _infoCard({
+    required String label,
+    required String value,
+    Color? color,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: color != null
+            ? color.withOpacity(0.12)
+            : Colors.white.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: color != null
+              ? color.withOpacity(0.4)
+              : Colors.white.withOpacity(0.1),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: const TextStyle(color: Colors.white60, fontSize: 12)),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _contactRow({
+    required IconData icon,
+    required String text,
+    bool dimmed = false,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, color: dimmed ? Colors.white24 : Colors.white38, size: 16),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: dimmed ? Colors.white24 : Colors.white70, 
+              fontSize: 13,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _buildImage(String? path) {
     if (path == null) {

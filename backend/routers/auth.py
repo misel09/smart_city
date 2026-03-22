@@ -117,6 +117,9 @@ def google_select_role(data: schemas.GoogleSelectRoleRequest, db: Session = Depe
     Used when email already exists and user picks a role.
     Finds contractor_type from DB automatically — no need to ask user.
     """
+    if data.role.lower().replace(" ", "_") == "municipality_officer":
+        raise HTTPException(status_code=403, detail="Google Login is not permitted for Municipality Officers.")
+
     # Find by email + role only (contractor_type auto-resolved from DB)
     user = db.query(models.User).filter(
         models.User.email == data.email,
@@ -169,7 +172,7 @@ def forgot_password_send_otp(data: schemas.ForgotPasswordRequest, db: Session = 
     otp = str(secrets.randbelow(900000) + 100000)
     _fp_otp_store[data.email] = {
         "otp": otp,
-        "name": user.username or "User",
+        "name": user.username or "Citizen",
         "expires_at": datetime.utcnow() + timedelta(minutes=10),
     }
 
@@ -177,7 +180,7 @@ def forgot_password_send_otp(data: schemas.ForgotPasswordRequest, db: Session = 
     <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
                 background:#0A1D37;border-radius:16px;color:#fff;">
       <h2 style="color:#EF5350;">Smart City 🏙️ — Password Reset</h2>
-      <p>Hi <b>{user.username or 'User'}</b>,</p>
+      <p>Hi <b>{user.username or 'Citizen'}</b>,</p>
       <p>Your password reset code is:</p>
       <div style="font-size:40px;font-weight:bold;letter-spacing:12px;
                   color:#EF5350;text-align:center;padding:16px 0;">{otp}</div>
@@ -341,6 +344,9 @@ def google_send_otp(data: schemas.GoogleOtpRequest):
 # ─── Step 2: Verify OTP + role → return JWT ───────────────────────────────────
 @router.post("/google/verify-otp", response_model=schemas.Token)
 def google_verify_otp(data: schemas.GoogleOtpVerify, db: Session = Depends(database.get_db)):
+    if data.role.lower().replace(" ", "_") == "municipality_officer":
+        raise HTTPException(status_code=403, detail="Google Login is not permitted for Municipality Officers.")
+        
     record = _otp_store.get(data.email)
 
     if not record:
@@ -391,6 +397,9 @@ def google_verify_otp(data: schemas.GoogleOtpVerify, db: Session = Depends(datab
 # ─── Google Direct Login (Sends OTP if role not found) ───────────────────────────
 @router.post("/google/login")
 def google_direct_login(google_data: schemas.UserGoogleLogin, db: Session = Depends(database.get_db)):
+    if google_data.role.lower().replace(" ", "_") == "municipality_officer":
+        raise HTTPException(status_code=403, detail="Google Login is not permitted for Municipality Officers.")
+        
     user = db.query(models.User).filter(
         models.User.email == google_data.email,
         models.User.role == google_data.role,
@@ -434,6 +443,9 @@ def google_direct_login(google_data: schemas.UserGoogleLogin, db: Session = Depe
 # ─── Google Direct Register ────────────────────────
 @router.post("/google/register")
 def google_direct_register(google_data: schemas.UserGoogleLogin, db: Session = Depends(database.get_db)):
+    if google_data.role.lower().replace(" ", "_") == "municipality_officer":
+        raise HTTPException(status_code=403, detail="Google registration is not permitted for Municipality Officers.")
+        
     user = db.query(models.User).filter(
         models.User.email == google_data.email,
         models.User.role == google_data.role,
@@ -531,7 +543,7 @@ def mobile_send_otp(data: schemas.MobileOtpRequest, current_user: models.User = 
     <div style="font-family:sans-serif;max-width:480px;margin:auto;padding:32px;
                 background:#0A1D37;border-radius:16px;color:#fff;">
       <h2 style="color:#4FC3F7;">Smart City 🏙️ — Update Mobile Number</h2>
-      <p>Hi <b>{current_user.username or 'User'}</b>,</p>
+      <p>Hi <b>{current_user.username or 'Citizen'}</b>,</p>
       <p>You requested to update your mobile number to <b>{data.new_mobile_number}</b>.</p>
       <p>Your verification code is:</p>
       <div style="font-size:40px;font-weight:bold;letter-spacing:12px;

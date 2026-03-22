@@ -6,23 +6,24 @@ class UserBase(BaseModel):
     email: EmailStr
     username: Optional[str] = None
     mobile_number: Optional[str] = None
+    district: Optional[str] = None
 
 class UserCreate(UserBase):
     password: str
-    role: str = "user"
+    role: str = "citizen"
     contractor_type: Optional[str] = None
 
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
-    role: str = "user"
+    role: str = "citizen"
     contractor_type: Optional[str] = None
 
 class UserGoogleLogin(BaseModel):
     email: EmailStr
     name: str
     google_id: str
-    role: str = "user"
+    role: str = "citizen"
     contractor_type: Optional[str] = None
 
 # Smart initiate: check if user exists before deciding what to do
@@ -36,7 +37,7 @@ class GoogleSelectRoleRequest(BaseModel):
     email: EmailStr
     name: str
     google_id: str
-    role: str = "user"
+    role: str = "citizen"
     contractor_type: Optional[str] = None
 
 # Step 1: After Google Sign-In, send OTP to email
@@ -51,7 +52,7 @@ class GoogleOtpVerify(BaseModel):
     name: str
     google_id: str
     otp: str
-    role: str = "user"
+    role: str = "citizen"
     contractor_type: Optional[str] = None
 
 # ─── Forgot Password ──────────────────────────────────────────────────────────
@@ -95,9 +96,9 @@ class ComplaintBase(BaseModel):
     latitude: float
     longitude: float
     address: str
+    district: Optional[str] = None
     image_path: Optional[str] = None
     priority: str = "Normal"
-    due_date: Optional[datetime] = None
     contractor_email: Optional[str] = None
 
 class ComplaintCreate(ComplaintBase):
@@ -118,6 +119,13 @@ class ComplaintResponse(ComplaintBase):
     taken_at: Optional[datetime] = None
     resolved_at: Optional[datetime] = None
     reviewed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+class AnalysisResponse(BaseModel):
+    category: str
+    description: str
+    priority: str
 
     class Config:
         from_attributes = True

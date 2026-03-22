@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../../../features/reports/presentation/providers/complaints_provider.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../pages/map_view_page.dart';
+import '../../../../features/reports/domain/models/complaint.dart';
 import '../../../../features/reports/presentation/pages/complaint_details_page.dart';
 import '../../../../features/reports/presentation/pages/contractor_complaint_details_page.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -29,9 +30,9 @@ class NearbyComplaintsList extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: Colors.white.withOpacity(0.1)),
             image: const DecorationImage(
-              image: const AssetImage('assets/images/map_preview.png'), // Local static map image
+              image: AssetImage('assets/images/map_preview.png'),
               fit: BoxFit.cover,
-              opacity: 0.25, // Dimmed for dark mode
+              opacity: 0.25,
             ),
           ),
           child: Column(
@@ -69,7 +70,10 @@ class NearbyComplaintsList extends StatelessWidget {
                 height: 140,
                 child: Consumer<ComplaintsProvider>(
                   builder: (context, provider, child) {
-                    final items = provider.nearbyComplaints;
+                    final items = provider.nearbyComplaints.where((c) => 
+                      c.status == ComplaintStatus.registered || 
+                      c.status == ComplaintStatus.inProgress
+                    ).toList();
 
                     if (provider.isLoading) {
                       return const Center(
@@ -121,87 +125,84 @@ class NearbyComplaintsList extends StatelessWidget {
                           },
                           child: Container(
                             width: 150,
-                          margin: const EdgeInsets.only(right: 12),
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF0A2744).withOpacity(0.95), // Solid dark blue card
-                            borderRadius: BorderRadius.circular(18),
-                            border: Border.all(color: Colors.white.withOpacity(0.15)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
-                                blurRadius: 10,
-                                offset: const Offset(0, 4),
-                              ),
-                            ],
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                               // Marker Icon
-                              Icon(
-                                Icons.location_on_rounded,
-                                color: item.statusColor, 
-                                size: 28,
-                              ),
-                              const SizedBox(height: 6),
-                              Text(
-                                item.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  height: 1.2,
+                            margin: const EdgeInsets.only(right: 12),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0A2744).withOpacity(0.95),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(color: Colors.white.withOpacity(0.15)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.3),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
                                 ),
-                              ),
-                               // Status and Priority Pills
-                               Row(
-                                 children: [
-                                   Container(
-                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                     decoration: BoxDecoration(
-                                       color: item.statusColor.withOpacity(0.2),
-                                       borderRadius: BorderRadius.circular(8),
-                                       border: Border.all(color: item.statusColor.withOpacity(0.5)),
-                                     ),
-                                     child: Text(
-                                       item.statusText,
-                                       style: TextStyle(
-                                         fontSize: 9,
-                                         fontWeight: FontWeight.bold,
-                                         color: item.statusColor,
-                                       ),
-                                     ),
-                                   ),
-                                   const SizedBox(width: 4),
-                                   if (item.priority == 'Urgent' || item.priority == 'High')
-                                     Container(
-                                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                       decoration: BoxDecoration(
-                                         color: item.priority == 'Urgent' ? Colors.red.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
-                                         borderRadius: BorderRadius.circular(8),
-                                         border: Border.all(color: item.priority == 'Urgent' ? Colors.red.withOpacity(0.5) : Colors.orange.withOpacity(0.5)),
-                                       ),
-                                       child: Text(
-                                         item.priority,
-                                         style: TextStyle(
-                                           fontSize: 9,
-                                           fontWeight: FontWeight.bold,
-                                           color: item.priority == 'Urgent' ? Colors.red : Colors.orange,
-                                         ),
-                                       ),
-                                     ),
-                                 ],
-                               ),
-
-                            ],
+                              ],
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Icon(
+                                  Icons.location_on_rounded,
+                                  color: item.statusColor, 
+                                  size: 28,
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  item.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                    height: 1.2,
+                                  ),
+                                ),
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: item.statusColor.withOpacity(0.2),
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(color: item.statusColor.withOpacity(0.5)),
+                                      ),
+                                      child: Text(
+                                        item.statusText,
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          color: item.statusColor,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    if (item.priority == 'Urgent' || item.priority == 'High')
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                                        decoration: BoxDecoration(
+                                          color: item.priority == 'Urgent' ? Colors.red.withOpacity(0.2) : Colors.orange.withOpacity(0.2),
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(color: item.priority == 'Urgent' ? Colors.red.withOpacity(0.5) : Colors.orange.withOpacity(0.5)),
+                                        ),
+                                        child: Text(
+                                          item.priority,
+                                          style: TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.bold,
+                                            color: item.priority == 'Urgent' ? Colors.red : Colors.orange,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
+                        );
+                      },
                     );
                   },
                 ),

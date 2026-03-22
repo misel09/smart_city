@@ -12,11 +12,20 @@ class ReviewsPage extends StatefulWidget {
   State<ReviewsPage> createState() => _ReviewsPageState();
 }
 
-class _ReviewsPageState extends State<ReviewsPage> {
+class _ReviewsPageState extends State<ReviewsPage> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
     _fetchData();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
   }
 
   Future<void> _fetchData() async {
@@ -91,64 +100,95 @@ class _ReviewsPageState extends State<ReviewsPage> {
                 ),
               ),
 
+              // ── Tab Bar ──────────────────────────────────────────────
+              _buildTabBar(),
+
               // ── List ─────────────────────────────────────────────────
               Expanded(
                 child: provider.isLoading 
                   ? const Center(child: CircularProgressIndicator(color: Color(0xFF4FC3F7)))
-                  : SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Pending review section
-                      if (pendingReviews.isNotEmpty) ...[
-                        _sectionLabel('PENDING YOUR REVIEW'),
-                        const SizedBox(height: 12),
-                        ...pendingReviews.map((c) => Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
-                          child: _reviewCard(
-                            context: context,
-                            complaint: c,
-                            navigable: true,
-                          ),
-                        )),
-                        const SizedBox(height: 14),
+                  : TabBarView(
+                      controller: _tabController,
+                      children: [
+                        _buildReviewList(pendingReviews, 'PENDING YOUR REVIEW', 'No pending reviews.'),
+                        _buildReviewList(completedReviews, 'REVIEW COMPLETED', 'No completed reviews.'),
                       ],
-
-                      // Reviewed section
-                      if (completedReviews.isNotEmpty) ...[
-                        _sectionLabel('REVIEW COMPLETED'),
-                        const SizedBox(height: 12),
-                        ...completedReviews.map((c) => Padding(
-                          padding: const EdgeInsets.only(bottom: 14),
-                          child: _reviewCard(
-                            context: context,
-                            complaint: c,
-                            navigable: true, // Allow them to see what they commented
-                          ),
-                        )),
-                      ],
-                      
-                      if (pendingReviews.isEmpty && completedReviews.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 40),
-                          child: Center(
-                            child: Text(
-                              'No reviews available yet.',
-                              style: TextStyle(color: Colors.white54, fontSize: 16),
-                            ),
-                          ),
-                        ),
-
-                      const SizedBox(height: 80),
-                    ],
-                  ),
-                ),
+                    ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      height: 50,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(25),
+      ),
+      child: TabBar(
+        controller: _tabController,
+        indicatorSize: TabBarIndicatorSize.tab,
+        dividerColor: Colors.transparent,
+        indicator: BoxDecoration(
+          color: const Color(0xFF4FC3F7).withOpacity(0.2),
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(
+              color: const Color(0xFF4FC3F7).withOpacity(0.5), width: 1),
+        ),
+        labelColor: const Color(0xFF4FC3F7),
+        unselectedLabelColor: Colors.white54,
+        labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+        unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+        tabs: const [
+          Tab(text: 'Pending'),
+          Tab(text: 'Completed'),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewList(List<Complaint> reviews, String label, String emptyMsg) {
+    if (reviews.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.inbox_rounded, size: 60, color: Colors.white.withOpacity(0.2)),
+            const SizedBox(height: 16),
+            Text(
+              emptyMsg,
+              style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 16),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      itemCount: reviews.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12, top: 10),
+            child: _sectionLabel(label),
+          );
+        }
+        final c = reviews[index - 1];
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 14),
+          child: _reviewCard(
+            context: context,
+            complaint: c,
+            navigable: true,
+          ),
+        );
+      },
     );
   }
 

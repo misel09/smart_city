@@ -31,7 +31,8 @@ class ApiConfig {
   static String get forgotPasswordVerifyOtpUrl => '$baseUrl/auth/forgot-password/verify-otp';
   static String get forgotPasswordResetUrl => '$baseUrl/auth/forgot-password/reset-password';
   static String get complaintsUrl => '$baseUrl/complaints';
-  static String get myComplaintsUrl => '$baseUrl/complaints/my';
+  static String get analyzeImageUrl => '$complaintsUrl/analyze-image';
+  static String get myComplaintsUrl => '$complaintsUrl/me';
   static String get takenComplaintsUrl => '$baseUrl/complaints/taken';
   static String get nearbyComplaintsUrl => '$baseUrl/complaints/nearby';
   static String userInfoUrl(String email) => '$baseUrl/auth/user-info?email=${Uri.encodeComponent(email)}';

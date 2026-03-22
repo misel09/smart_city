@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from .. import models, schemas, database, auth
 from fastapi import File, Form, UploadFile
 import shutil
@@ -58,6 +58,7 @@ def enrich_complaints(db: Session, complaints: List[models.Complaint]) -> List[s
             "latitude": float(c.latitude) if c.latitude else 0.0,
             "longitude": float(c.longitude) if c.longitude else 0.0,
             "address": c.address,
+            "district": c.district,
             "status": c.status,
             "timestamp": c.timestamp,
             "image_path": c.image_path,
@@ -65,7 +66,6 @@ def enrich_complaints(db: Session, complaints: List[models.Complaint]) -> List[s
             "user_name": u.username if u else None,
             "user_mobile": u.mobile_number if u else None,
             "priority": c.priority,
-            "due_date": c.due_date,
             "contractor_email": c.contractor_email,
             "contractor_name": cu.username if cu else None,
             "contractor_mobile": cu.mobile_number if cu else None,
@@ -92,6 +92,7 @@ def enrich_single(db: Session, c: models.Complaint) -> schemas.ComplaintResponse
         "latitude": float(c.latitude) if c.latitude else 0.0,
         "longitude": float(c.longitude) if c.longitude else 0.0,
         "address": c.address,
+        "district": c.district,
         "status": c.status,
         "timestamp": c.timestamp,
         "image_path": c.image_path,
@@ -99,7 +100,6 @@ def enrich_single(db: Session, c: models.Complaint) -> schemas.ComplaintResponse
         "user_name": u.username if u else None,
         "user_mobile": u.mobile_number if u else None,
         "priority": c.priority,
-        "due_date": c.due_date,
         "contractor_email": c.contractor_email,
         "contractor_name": cu.username if cu else None,
         "contractor_mobile": cu.mobile_number if cu else None,
@@ -135,7 +135,7 @@ def get_nearby_complaints(
             c_lat = float(c.latitude)
             c_lng = float(c.longitude)
             dist = haversine_distance(lat, lng, c_lat, c_lng)
-            if dist <= 50.0:  # Only include if within 50 km
+            if dist <= 10.0:  # Only include if within 10 km
                 complaints_with_distance.append((c, dist))
         except (ValueError, TypeError):
             # If coordinates are invalid, skip them for nearby
@@ -147,7 +147,43 @@ def get_nearby_complaints(
     # Return the enriched models
     return enrich_complaints(db, [c for c, dist in complaints_with_distance])
 
+@router.post("/analyze-image", response_model=schemas.AnalysisResponse)
+def analyze_image(
+    image: UploadFile = File(...),
+    current_user: models.User = Depends(auth.get_current_user)
+):
+    """
+    Analyzes an uploaded image and returns a suggested category and description.
+    """
+    file_extension = image.filename.split(".")[-1]
+    filename = f"temp_analysis_{uuid.uuid4()}.{file_extension}"
+    file_location = f"uploads/{filename}"
+    
+    try:
+        with open(file_location, "wb") as buffer:
+            shutil.copyfileobj(image.file, buffer)
+        
+        from ..ai_utils import ai_utils
+        
+        # 1. Analyze image (consolidated call for speed)
+        analysis = ai_utils.analyze_image(file_location)
+        category = analysis.get("category", "Unclassified")
+        description = analysis.get("description", "")
+        priority = analysis.get("priority", "Normal")
+        
+        return {
+            "category": category, 
+            "description": description, 
+            "priority": priority
+        }
+    finally:
+        # Cleanup temp file if necessary, though we might keep it or use a specific temp dir
+        # For now, we'll keep it simple and just return the data. 
+        # In a real app, you'd delete the temp file here.
+        pass
+
 @router.post("/", response_model=schemas.ComplaintResponse)
+
 def create_complaint(
     title: str = Form(...),
     description: str = Form(...),
@@ -155,8 +191,8 @@ def create_complaint(
     latitude: str = Form(...),
     longitude: str = Form(...),
     address: str = Form(...),
+    district: Optional[str] = Form(None),
     priority: str = Form("Normal"),
-    due_date: str = Form(None),
     image: UploadFile = File(None),
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)
@@ -166,14 +202,6 @@ def create_complaint(
             status_code=400, 
             detail="A verified mobile number is required to report an issue."
         )
-
-    due_date_dt = None
-    if due_date:
-        try:
-            # Assuming frontend sends standard ISO string
-            due_date_dt = datetime.fromisoformat(due_date.replace("Z", "+00:00"))
-        except:
-            pass
             
     image_path = None
     if image:
@@ -184,6 +212,27 @@ def create_complaint(
             shutil.copyfileobj(image.file, buffer)
         image_path = f"uploads/{filename}"
 
+        # --- AI Pipeline Integration ---
+        from ..ai_utils import ai_utils
+        
+        # Consolidated AI check for multiple fields
+        if (category in ["Auto-Detect", "Unclassified", "", "None", "undefined"]) or (description in ["Auto-Generate", "", "None", "undefined"] or len(description) < 5):
+            try:
+                # Consolidated parallel AI call
+                analysis = ai_utils.analyze_image(file_location)
+                
+                if category in ["Auto-Detect", "Unclassified", "", "None", "undefined"]:
+                    category = analysis.get("category", category)
+                
+                if description in ["Auto-Generate", "", "None", "undefined"] or len(description) < 5:
+                    description = analysis.get("description", description)
+                
+                # Assign priority from Gemini
+                priority = analysis.get("priority", priority)
+            except Exception as e:
+                print(f"AI Pipeline failed: {e}")
+        # --- End AI Pipeline ---
+
     db_complaint = models.Complaint(
         title=title,
         description=description,
@@ -191,10 +240,10 @@ def create_complaint(
         latitude=latitude,
         longitude=longitude,
         address=address,
+        district=district,
         image_path=image_path,
         user_email=current_user.email,   # ← link to user
         priority=priority,
-        due_date=due_date_dt,
     )
     db.add(db_complaint)
     db.commit()
@@ -302,16 +351,22 @@ def read_complaints(
 ):
     query = db.query(models.Complaint)
     
-    if current_user.role and current_user.role.lower() == "contractor" and current_user.contractor_type:
+    user_role = current_user.role.lower() if current_user.role else ""
+
+    if user_role == "contractor" and current_user.contractor_type:
         allowed_categories = CONTRACTOR_CATEGORY_MAP.get(current_user.contractor_type, [])
         if allowed_categories:
             query = query.filter(models.Complaint.category.in_(allowed_categories))
+            
+    if user_role == "municipality_officer" and current_user.district:
+        # Case insensitive match for safety
+        query = query.filter(models.Complaint.district.ilike(f"%{current_user.district}%"))
             
     complaints = query.offset(skip).limit(limit).all()
     return enrich_complaints(db, complaints)
 
 # Only the current user's complaints
-@router.get("/my", response_model=List[schemas.ComplaintResponse])
+@router.get("/me", response_model=List[schemas.ComplaintResponse])
 def read_my_complaints(
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)
@@ -347,6 +402,15 @@ def delete_complaint(
     complaint = db.query(models.Complaint).filter(models.Complaint.id == complaint_id).first()
     if not complaint:
         raise HTTPException(status_code=404, detail="Complaint not found")
+        
+    # Security check: only the reporter can delete
+    if complaint.user_email != current_user.email:
+        raise HTTPException(status_code=403, detail="You can only delete your own reports.")
+        
+    # Status check: only Registered reports can be deleted
+    if complaint.status != "Registered":
+        raise HTTPException(status_code=400, detail="Only 'Registered' reports can be deleted.")
+        
     db.delete(complaint)
     db.commit()
     return None

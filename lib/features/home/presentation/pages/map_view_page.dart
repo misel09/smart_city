@@ -14,6 +14,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../../../core/config/api_config.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class MapViewPage extends StatefulWidget {
   const MapViewPage({super.key});
@@ -26,27 +28,149 @@ class _MapViewPageState extends State<MapViewPage> {
   final MapController _mapController = MapController();
   
   String _userRole = '';
+  LatLng _latLngCenter = const LatLng(22.57, 72.93); 
+  double _currentZoom = 10.5;
+  bool _hasMovedToLocation = false;
+  String _selectedStatus = 'All'; 
+  bool _isFilterExpanded = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchUserInfo();
+    _fetchUserInfo().then((_) {
+      _fetchInitialData();
+    });
+    _loadCachedLocation();
+  }
+
+  Future<void> _fetchInitialData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    if (token == null) return;
+
+    if (_userRole.toLowerCase().contains('officer')) {
+      debugPrint('MapViewPage: Officer detected, fetching all complaints');
+      context.read<ComplaintsProvider>().fetchAllComplaints(token).then((_) {
+        if (mounted) {
+          final count = context.read<ComplaintsProvider>().allComplaints.length;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Viewing $count urban issues'),
+              duration: const Duration(seconds: 2),
+              backgroundColor: const Color(0xFF0F172A),
+            ),
+          );
+          if (!_hasMovedToLocation) {
+             _moveToFirstComplaint();
+          }
+        }
+      });
+    } else {
+      debugPrint('MapViewPage: Citizen/Contractor detected, fetching nearby');
+      _fetchNearbyComplaints();
+    }
+  }
+
+  void _moveToFirstComplaint() {
+    final complaints = context.read<ComplaintsProvider>().allComplaints;
+    if (complaints.isNotEmpty) {
+      final target = complaints.first.location;
+      _mapController.move(target, 12.0);
+      setState(() {
+        _latLngCenter = target;
+        _currentZoom = 12.0;
+        _hasMovedToLocation = true;
+      });
+    }
+  }
+
+  Future<void> _loadCachedLocation() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lat = prefs.getDouble('last_lat');
+      final lng = prefs.getDouble('last_lng');
+      
+      if (lat != null && lng != null && mounted) {
+        setState(() {
+          _latLngCenter = LatLng(lat, lng);
+          _currentZoom = 12.0;
+        });
+        
+        Future.delayed(const Duration(milliseconds: 600), () {
+          if (mounted) {
+            _mapController.move(_latLngCenter, 12.0);
+            setState(() => _hasMovedToLocation = true);
+          }
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _fetchNearbyComplaints() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.medium,
+        timeLimit: const Duration(seconds: 5),
+      );
+
+      if (mounted) {
+        await prefs.setDouble('last_lat', position.latitude);
+        await prefs.setDouble('last_lng', position.longitude);
+
+        context.read<ComplaintsProvider>().fetchNearbyComplaints(
+          token, 
+          position.latitude, 
+          position.longitude
+        ).then((_) {
+           if (mounted) {
+              final count = context.read<ComplaintsProvider>().nearbyComplaints.length;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Viewing $count issues near you'),
+                  duration: const Duration(seconds: 2),
+                  backgroundColor: const Color(0xFF0F172A),
+                ),
+              );
+           }
+        });
+        
+        Future.delayed(const Duration(milliseconds: 800), () {
+          if (mounted) {
+            _mapController.move(LatLng(position.latitude, position.longitude), 12.0);
+            setState(() {
+              _latLngCenter = LatLng(position.latitude, position.longitude);
+              _currentZoom = 12.0;
+              _hasMovedToLocation = true;
+            });
+          }
+        });
+      }
+    } catch (_) {
+      if (mounted && !_hasMovedToLocation) {
+        _moveToFirstComplaint();
+      }
+    }
   }
 
   Future<void> _fetchUserInfo() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      
-      // Try to get from prefs first
       final cachedRole = prefs.getString('role');
       if (cachedRole != null && cachedRole.isNotEmpty) {
-        if (mounted) setState(() => _userRole = cachedRole.toLowerCase().trim());
+        if (mounted) {
+          setState(() {
+            _userRole = cachedRole.toLowerCase().trim();
+          });
+        }
       }
       
       final token = prefs.getString('token');
       if (token == null) return;
 
-       // Always verify or fetch from backend just to be safe
       final res = await http.get(
         Uri.parse(ApiConfig.meUrl),
         headers: {'Authorization': 'Bearer $token'},
@@ -55,8 +179,6 @@ class _MapViewPageState extends State<MapViewPage> {
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
         final fetchedRole = data['role']?.toString().toLowerCase().trim() ?? '';
-        
-        // Save to prefs for future use
         await prefs.setString('role', fetchedRole);
         
         if (mounted) {
@@ -65,18 +187,25 @@ class _MapViewPageState extends State<MapViewPage> {
           });
         }
       }
-    } catch (_) {
-      // Ignore errors, role will fallback to user
+    } catch (e) {
+      debugPrint('MapViewPage: Error in _fetchUserInfo: $e');
     }
   }
 
-  // Center of India (Approx)
-  final LatLng _center = const LatLng(20.5937, 78.9629);
+  Future<void> _openGoogleMaps(double lat, double lng) async {
+    final url = Uri.parse('https://www.google.com/maps/search/?api=1&query=$lat,$lng');
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open Google Maps')),
+        );
+      }
+    }
+  }
 
-  // Handle keyboard panning
   void _handleKeyEvent(KeyEvent event) {
     if (event is KeyDownEvent) {
-      final double panStep = 0.01 * (20 / _mapController.camera.zoom); // Dynamic step based on zoom
+      final double panStep = 0.01 * (20 / _mapController.camera.zoom);
       LatLng currentCenter = _mapController.camera.center;
       
       if (event.logicalKey == LogicalKeyboardKey.arrowUp) {
@@ -93,6 +222,8 @@ class _MapViewPageState extends State<MapViewPage> {
 
   @override
   Widget build(BuildContext context) {
+    final bool isOfficer = _userRole.toLowerCase().contains('officer');
+
     return Scaffold(
       backgroundColor: const Color(0xFF18181B),
       body: Focus(
@@ -103,18 +234,17 @@ class _MapViewPageState extends State<MapViewPage> {
         },
         child: Stack(
           children: [
-            // Map Layer
             MouseRegion(
               cursor: SystemMouseCursors.grab,
               child: FlutterMap(
                 mapController: _mapController,
                 options: MapOptions(
-                  initialCenter: _center,
-                  initialZoom: 5.0,
+                  initialCenter: _latLngCenter,
+                  initialZoom: _currentZoom,
                   minZoom: 3.0,
                   interactionOptions: const InteractionOptions(
                     flags: InteractiveFlag.all & ~InteractiveFlag.rotate,
-                    scrollWheelVelocity: 0.015, // Smoother scroll zoom
+                    scrollWheelVelocity: 0.015,
                   ),
                 ),
                 children: [
@@ -124,10 +254,33 @@ class _MapViewPageState extends State<MapViewPage> {
                   ),
                   Consumer<ComplaintsProvider>(
                     builder: (context, provider, child) {
-                      // Group complaints by location
+                      // Determine which complaints to show
+                      List<Complaint> sourceComplaints;
+                      
+                      if (isOfficer) {
+                        sourceComplaints = provider.allComplaints;
+                      } else {
+                        // User and Contractor only see "Registered" and "In Progress" nearby issues
+                        sourceComplaints = provider.nearbyComplaints.where((c) => 
+                          c.status == ComplaintStatus.registered || 
+                          c.status == ComplaintStatus.inProgress
+                        ).toList();
+                      }
+
+                      debugPrint('MapViewPage: Rendering markers. Role: [$_userRole], isOfficer: $isOfficer, Source: ${isOfficer ? "All" : "Nearby (Registered/InProgress)"}, Count: ${sourceComplaints.length}');
+
+                      List<Complaint> filtered = sourceComplaints;
+                      
+                      // Secondary filter (Status Picker at top right) - Only for Officers
+                      if (isOfficer && _selectedStatus != 'All') {
+                        filtered = filtered.where((c) => 
+                          c.statusText.toLowerCase() == _selectedStatus.toLowerCase()
+                        ).toList();
+                      }
+
                       final Map<String, List<Complaint>> grouped = {};
-                      for (var complaint in provider.nearbyComplaints) {
-                        final key = '${complaint.location.latitude.toStringAsFixed(4)},${complaint.location.longitude.toStringAsFixed(4)}';
+                      for (var complaint in filtered) {
+                        final key = '${complaint.location.latitude.toStringAsFixed(3)},${complaint.location.longitude.toStringAsFixed(3)}';
                         if (!grouped.containsKey(key)) {
                           grouped[key] = [];
                         }
@@ -193,114 +346,95 @@ class _MapViewPageState extends State<MapViewPage> {
               ),
             ),
           
-          // Back Button
-          Positioned(
-            top: 50,
-            left: 20,
-            child: InkWell(
-              onTap: () => Navigator.pop(context),
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
-                    ),
-                  ],
+            Positioned(
+              top: 50,
+              left: 20,
+              child: InkWell(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.1),
+                        blurRadius: 10,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.arrow_back, color: Colors.black),
                 ),
-                child: const Icon(Icons.arrow_back, color: Colors.black),
               ),
             ),
-          ),
-          
-          // Map Type Indicator
-          Positioned(
-            top: 50,
-            right: 20,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(24),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                  ),
-                ],
+            
+            // Only show status filters for Officer
+            if (isOfficer)
+              Positioned(
+                top: 50,
+                right: 20,
+                child: _buildStatusFilters(),
               ),
-              child: const Row(
-                children: [
-                  Icon(Icons.public, size: 16, color: Colors.blue),
-                  SizedBox(width: 8),
-                  Text(
-                    'India View',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
+          ],
+        ),
+      ),
+      floatingActionButton: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            FloatingActionButton(
+              heroTag: 'refresh_complaints',
+              mini: true,
+              backgroundColor: const Color(0xFF0F172A),
+              onPressed: () => _fetchInitialData(),
+              child: const Icon(Icons.refresh_rounded, color: Color(0xFF4FC3F7)),
             ),
-          ),
-        ],
-      ),
-    ),
-    floatingActionButton: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            heroTag: 'zoom_in',
-            mini: true,
-            backgroundColor: Colors.white,
-            onPressed: () {
-              final currentZoom = _mapController.camera.zoom;
-              _mapController.move(_mapController.camera.center, currentZoom + 1);
-            },
-            child: const Icon(Icons.add, color: Colors.black),
-          ),
-          const SizedBox(height: 8),
-          FloatingActionButton(
-            heroTag: 'zoom_out',
-            mini: true,
-            backgroundColor: Colors.white,
-            onPressed: () {
-              final currentZoom = _mapController.camera.zoom;
-              _mapController.move(_mapController.camera.center, currentZoom - 1);
-            },
-            child: const Icon(Icons.remove, color: Colors.black),
-          ),
-          const SizedBox(height: 8),
-          FloatingActionButton(
-            heroTag: 'center_location',
-            onPressed: () {
-              _mapController.move(_center, 5.0);
-            },
-            backgroundColor: Colors.blue, // Highlight main action
-            child: const Icon(Icons.center_focus_strong, color: Colors.white),
-          ),
-        ],
-      ),
+            const SizedBox(height: 8),
+            FloatingActionButton(
+              heroTag: 'zoom_in',
+              mini: true,
+              backgroundColor: Colors.white,
+              onPressed: () {
+                final currentZoom = _mapController.camera.zoom;
+                _mapController.move(_mapController.camera.center, currentZoom + 1);
+              },
+              child: const Icon(Icons.add, color: Colors.black),
+            ),
+            const SizedBox(height: 8),
+            FloatingActionButton(
+              heroTag: 'zoom_out',
+              mini: true,
+              backgroundColor: Colors.white,
+              onPressed: () {
+                final currentZoom = _mapController.camera.zoom;
+                _mapController.move(_mapController.camera.center, currentZoom - 1);
+              },
+              child: const Icon(Icons.remove, color: Colors.black),
+            ),
+            const SizedBox(height: 8),
+            FloatingActionButton(
+              heroTag: 'center_location',
+              onPressed: () {
+                _mapController.move(_latLngCenter, 12.0);
+              },
+              backgroundColor: AppColors.primary,
+              child: const Icon(Icons.my_location, color: Colors.white),
+            ),
+          ],
+        ),
     );
   }
 
-
   void _showMultipleIssuesList(BuildContext context, List<Complaint> complaints) {
-    // Sort by timestamp descending (latest first)
     complaints.sort((a, b) => b.timestamp.compareTo(a.timestamp));
     
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      isScrollControlled: true, // Allow custom height
+      isScrollControlled: true,
       builder: (context) => Container(
-        height: 450, // Fixed height for swipe view
+        height: 450,
         decoration: BoxDecoration(
-          color: const Color(0xFF0F172A), // Dark Ocean Blue
+          color: const Color(0xFF0F172A),
           border: Border(
             top: BorderSide(color: Colors.white.withOpacity(0.1), width: 1),
           ),
@@ -312,7 +446,6 @@ class _MapViewPageState extends State<MapViewPage> {
             child: Column(
               children: [
                 const SizedBox(height: 16),
-                // Handle bar
                 Container(
                   width: 40,
                   height: 4,
@@ -335,7 +468,7 @@ class _MapViewPageState extends State<MapViewPage> {
                         ),
                       ),
                       const Spacer(),
-                      Icon(Icons.swipe, size: 20, color: Colors.white.withOpacity(0.6)), // Indication to swipe
+                      Icon(Icons.swipe, size: 20, color: Colors.white.withOpacity(0.6)),
                       const SizedBox(width: 4),
                       Text('Swipe', style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12)),
                     ],
@@ -344,7 +477,7 @@ class _MapViewPageState extends State<MapViewPage> {
             const SizedBox(height: 16),
             Expanded(
               child: PageView.builder(
-                controller: PageController(viewportFraction: 0.9), // Show peek of next card
+                controller: PageController(viewportFraction: 0.9),
                 itemCount: complaints.length,
                 itemBuilder: (context, index) {
                   final complaint = complaints[index];
@@ -353,7 +486,7 @@ class _MapViewPageState extends State<MapViewPage> {
                   return Container(
                     margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E293B), // Slightly lighter ocean blue for cards
+                      color: const Color(0xFF1E293B),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: Colors.white.withOpacity(0.1)),
                       boxShadow: [
@@ -367,7 +500,6 @@ class _MapViewPageState extends State<MapViewPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                         // Status Tag & Close
                          Padding(
                            padding: const EdgeInsets.all(16),
                            child: Row(
@@ -390,7 +522,7 @@ class _MapViewPageState extends State<MapViewPage> {
                                const Spacer(),
                                Text(
                                  '${index + 1}/${complaints.length}',
-                                 style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 12),
+                                 style: TextStyle(color: Colors.white38, fontSize: 12),
                                ),
                              ],
                            ),
@@ -421,11 +553,11 @@ class _MapViewPageState extends State<MapViewPage> {
                                const SizedBox(height: 12),
                                Row(
                                  children: [
-                                   Icon(Icons.access_time, size: 14, color: Colors.white.withOpacity(0.5)),
+                                   Icon(Icons.access_time, size: 14, color: Colors.white38),
                                    const SizedBox(width: 4),
                                    Text(
                                      timeString,
-                                     style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
+                                     style: const TextStyle(color: Colors.white38, fontSize: 12),
                                    ),
                                  ],
                                ),
@@ -434,34 +566,52 @@ class _MapViewPageState extends State<MapViewPage> {
                          ),
                          const Spacer(),
                          Padding(
-                           padding: const EdgeInsets.all(16),
-                           child: SizedBox(
-                             width: double.infinity,
-                             child: ElevatedButton(
-                               onPressed: () async {
-                                 if (!context.mounted) return;
-                                 Navigator.pop(context); // Close sheet
-                                 if (_userRole == 'contractor') {
-                                   Navigator.push(
-                                     context, 
-                                     MaterialPageRoute(builder: (_) => ContractorComplaintDetailsPage(complaint: complaint)),
-                                   );
-                                 } else {
-                                   Navigator.push(
-                                     context, 
-                                     MaterialPageRoute(builder: (_) => ComplaintDetailsPage(complaint: complaint)),
-                                   );
-                                 }
-                               },
-                               style: ElevatedButton.styleFrom(
-                                 backgroundColor: AppColors.primary,
-                                 padding: const EdgeInsets.symmetric(vertical: 14),
-                                 shape: RoundedRectangleBorder(
-                                   borderRadius: BorderRadius.circular(12),
+                           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                           child: Row(
+                             children: [
+                               Expanded(
+                                 child: ElevatedButton(
+                                   onPressed: () async {
+                                     if (!context.mounted) return;
+                                     Navigator.pop(context);
+                                     if (_userRole == 'contractor') {
+                                       Navigator.push(
+                                         context, 
+                                         MaterialPageRoute(builder: (_) => ContractorComplaintDetailsPage(complaint: complaint)),
+                                       );
+                                     } else {
+                                       Navigator.push(
+                                         context, 
+                                         MaterialPageRoute(builder: (_) => ComplaintDetailsPage(complaint: complaint)),
+                                       );
+                                     }
+                                   },
+                                   style: ElevatedButton.styleFrom(
+                                     backgroundColor: AppColors.primary,
+                                     padding: const EdgeInsets.symmetric(vertical: 14),
+                                     shape: RoundedRectangleBorder(
+                                       borderRadius: BorderRadius.circular(12),
+                                     ),
+                                   ),
+                                   child: const Text('Full Details', style: TextStyle(color: Colors.white, fontSize: 13)),
                                  ),
                                ),
-                               child: const Text('View Full Details', style: TextStyle(color: Colors.white)),
-                             ),
+                               const SizedBox(width: 8),
+                               Expanded(
+                                 child: OutlinedButton.icon(
+                                   onPressed: () => _openGoogleMaps(complaint.location.latitude, complaint.location.longitude),
+                                   icon: const Icon(Icons.map, size: 16, color: Colors.blue),
+                                   label: const Text('Google Map', style: TextStyle(color: Colors.white, fontSize: 13)),
+                                   style: OutlinedButton.styleFrom(
+                                     side: const BorderSide(color: Colors.blue),
+                                     padding: const EdgeInsets.symmetric(vertical: 14),
+                                     shape: RoundedRectangleBorder(
+                                       borderRadius: BorderRadius.circular(12),
+                                     ),
+                                   ),
+                                 ),
+                               ),
+                             ],
                            ),
                          ),
                       ],
@@ -477,7 +627,6 @@ class _MapViewPageState extends State<MapViewPage> {
     );
   }
 
-  // Keep existing single issue details
   void _showIssueDetails(BuildContext context, Complaint complaint) {
     final timeString = DateFormat('MMM d, h:mm a').format(complaint.timestamp);
 
@@ -487,7 +636,7 @@ class _MapViewPageState extends State<MapViewPage> {
       builder: (context) => Container(
         padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: const Color(0xFF0F172A), // Dark Ocean Blue
+          color: const Color(0xFF0F172A),
           border: Border(
             top: BorderSide(color: Colors.white.withOpacity(0.1), width: 1),
           ),
@@ -542,34 +691,140 @@ class _MapViewPageState extends State<MapViewPage> {
               ),
             ),
             const SizedBox(height: 24),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () async {
-                  if (!context.mounted) return;
-                  Navigator.pop(context); // Close sheet
-                  if (_userRole == 'contractor') {
-                    Navigator.push(
-                      context, 
-                      MaterialPageRoute(builder: (_) => ContractorComplaintDetailsPage(complaint: complaint)),
-                    );
-                  } else {
-                    Navigator.push(
-                      context, 
-                      MaterialPageRoute(builder: (_) => ComplaintDetailsPage(complaint: complaint)),
-                    );
-                  }
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.primary,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () async {
+                      if (!context.mounted) return;
+                      Navigator.pop(context);
+                      if (_userRole == 'contractor') {
+                        Navigator.push(
+                          context, 
+                          MaterialPageRoute(builder: (_) => ContractorComplaintDetailsPage(complaint: complaint)),
+                        );
+                      } else {
+                        Navigator.push(
+                          context, 
+                          MaterialPageRoute(builder: (_) => ComplaintDetailsPage(complaint: complaint)),
+                        );
+                      }
+                    },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: const Text('Full Details', style: TextStyle(color: Colors.white)),
                   ),
                 ),
-                child: const Text('View Full Details', style: TextStyle(color: Colors.white)),
-              ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _openGoogleMaps(complaint.location.latitude, complaint.location.longitude),
+                    icon: const Icon(Icons.location_on_outlined, color: Colors.blue),
+                    label: const Text('Google Map', style: TextStyle(color: Colors.white)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.blue),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _getFilterColor(String filter) {
+    switch (filter) {
+      case 'Registered':
+        return Colors.orange;
+      case 'In Progress':
+        return Colors.blue;
+      case 'Resolved':
+        return Colors.green;
+      case 'Reviewed':
+        return Colors.teal;
+      default:
+        return Colors.indigoAccent;
+    }
+  }
+
+  Widget _buildStatusFilters() {
+    final filters = ['All', 'Registered', 'In Progress', 'Resolved', 'Reviewed'];
+
+    return GestureDetector(
+      onTap: () => setState(() => _isFilterExpanded = !_isFilterExpanded),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+        width: _isFilterExpanded ? 160 : 110,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFF0F172A),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withOpacity(0.1)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Icon(Icons.filter_list, color: _getFilterColor(_selectedStatus), size: 18),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Text(
+                    _selectedStatus,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            if (_isFilterExpanded) ...[
+              const SizedBox(height: 12),
+              ...filters.where((f) => f != _selectedStatus).map((f) => 
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      _selectedStatus = f;
+                      _isFilterExpanded = false;
+                    });
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _getFilterColor(f),
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(f, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
       ),

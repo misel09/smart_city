@@ -29,10 +29,10 @@ class _RegisterPageState extends State<RegisterPage> {
   bool _agreedToTerms = false;
   bool _isLoading = false;
 
-  String _selectedRole = 'User';
+  String? _selectedRole;
   String? _selectedContractorType;
 
-  final List<String> _roles = ['User', 'Contractor'];
+  final List<String> _roles = ['Citizen', 'Contractor'];
   final List<String> _contractorTypes = [
     'Civil / Structural Repair Contractor',
     'Electrical Contractor',
@@ -154,7 +154,9 @@ class _RegisterPageState extends State<RegisterPage> {
                         const Text("Select Role", style: TextStyle(color: Colors.white70, fontSize: 12)),
                         const SizedBox(height: 8),
                         DropdownButtonFormField<String>(
+                          isExpanded: true,
                           value: _selectedRole,
+                          hint: const Text("Select Role (e.g., Citizen)"),
                           items: _roles.map((role) {
                             return DropdownMenuItem(value: role, child: Text(role));
                           }).toList(),
@@ -307,7 +309,7 @@ class _RegisterPageState extends State<RegisterPage> {
                           width: double.infinity,
                           height: 54,
                           child: ElevatedButton(
-                            onPressed: _agreedToTerms && !_isLoading
+                            onPressed: (_agreedToTerms && !_isLoading)
                               ? _register
                               : null,
                             style: ElevatedButton.styleFrom(
@@ -325,14 +327,14 @@ class _RegisterPageState extends State<RegisterPage> {
                                 "Create Account", 
                                 style: TextStyle(
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 16
-                                )
+                                  fontSize: 16,
+                                ),
                               ),
                           ),
                         ),
 
                         const SizedBox(height: 16),
-                        
+
                         // Google Sign Up Button
                         SizedBox(
                           width: double.infinity,
@@ -363,7 +365,7 @@ class _RegisterPageState extends State<RegisterPage> {
                           ),
                         ),
 
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 32),
 
                         // Login Link
                         Row(
@@ -379,7 +381,7 @@ class _RegisterPageState extends State<RegisterPage> {
                                    fontWeight: FontWeight.bold,
                                  ),
                                ),
-                             )
+                             ),
                           ],
                         ),
                         
@@ -408,9 +410,14 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _register() async {
+    if (_selectedRole == null || _selectedRole!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select your role (Citizen or Contractor)')),
+      );
+      return;
+    }
     setState(() => _isLoading = true);
     
-    // Quick validation
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill in all fields')),
@@ -427,7 +434,7 @@ class _RegisterPageState extends State<RegisterPage> {
           'username': _nameController.text, // Optional but good to send
           'email': _emailController.text,
           'password': _passwordController.text,
-          'role': _selectedRole.toLowerCase(),
+          'role': _selectedRole!.toLowerCase(),
           'contractor_type': _selectedContractorType,
         }),
       );
@@ -459,6 +466,12 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _registerWithGoogle() async {
+    if (_selectedRole == null || _selectedRole!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select your role (Citizen or Contractor)')),
+      );
+      return;
+    }
     setState(() => _isLoading = true);
     try {
       final accountData = await signInWithGoogle();
@@ -477,7 +490,7 @@ class _RegisterPageState extends State<RegisterPage> {
           'email': accountData['email'],
           'name': accountData['name'],
           'google_id': accountData['google_id'],
-          'role': _selectedRole.toLowerCase(),
+          'role': _selectedRole!.toLowerCase(),
           'contractor_type': _selectedContractorType,
         }),
       );
@@ -497,7 +510,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   email: accountData['email']!,
                   name: accountData['name']!,
                   googleId: accountData['google_id']!,
-                  role: _selectedRole,
+                  role: _selectedRole!,
                   contractorType: _selectedContractorType,
                 ),
               ),
@@ -508,12 +521,13 @@ class _RegisterPageState extends State<RegisterPage> {
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', body['access_token']);
-        await prefs.setString('role', _selectedRole.toLowerCase().trim());
+        await prefs.setString('role', _selectedRole!.toLowerCase().trim());
         final email = accountData['email']!.toLowerCase();
         await prefs.setString('currentUserEmail', email);
         
         // Log this login using scoped key
-        final historyKey = 'login_history_${email}_${_selectedRole.toLowerCase().trim()}';
+        final roleKey = _selectedRole!.toLowerCase().trim();
+        final historyKey = 'login_history_${email}_$roleKey';
         final loginHistory = prefs.getString(historyKey);
         List<dynamic> logs = loginHistory != null ? jsonDecode(loginHistory) : [];
         logs.add(DateTime.now().toIso8601String());

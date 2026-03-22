@@ -17,13 +17,13 @@ class Complaint {
   final ComplaintStatus status;
   final LatLng location;
   final String address;
+  final String? district;
   final DateTime timestamp;
   final String? imagePath;
   final String? userEmail;
   final String? userName;
   final String? userMobile;
   final String priority;
-  final DateTime? dueDate;
   final String? contractorEmail;
   final String? contractorName;
   final String? contractorMobile;
@@ -44,13 +44,13 @@ class Complaint {
     required this.status,
     required this.location,
     required this.address,
+    this.district,
     required this.timestamp,
     this.imagePath,
     this.userEmail,
     this.userName,
     this.userMobile,
     this.priority = 'Normal',
-    this.dueDate,
     this.contractorEmail,
     this.contractorName,
     this.contractorMobile,
@@ -71,13 +71,13 @@ class Complaint {
       status: _mapStringToStatus(json['status'] ?? 'registered'),
       location: _parseLatLngSafe(json['latitude'], json['longitude']),
       address: json['address'] ?? '',
+      district: json['district'],
       timestamp: DateTime.tryParse(json['timestamp']?.toString() ?? '')?.toLocal() ?? DateTime.now(),
       imagePath: json['image_path'],
       userEmail: json['user_email'],
       userName: json['user_name'],
       userMobile: json['user_mobile'],
       priority: json['priority'] ?? 'Normal',
-      dueDate: json['due_date'] != null ? DateTime.tryParse(json['due_date'].toString())?.toLocal() : null,
       contractorEmail: json['contractor_email'],
       contractorName: json['contractor_name'],
       contractorMobile: json['contractor_mobile'],
@@ -111,13 +111,13 @@ class Complaint {
       'latitude': location.latitude,
       'longitude': location.longitude,
       'address': address,
+      'district': district,
       'image_path': imagePath,
       'timestamp': timestamp.toIso8601String(),
       'user_email': userEmail,
       'user_name': userName,
       'user_mobile': userMobile,
       'priority': priority,
-      'due_date': dueDate?.toIso8601String(),
       'contractor_email': contractorEmail,
       'contractor_name': contractorName,
       'contractor_mobile': contractorMobile,

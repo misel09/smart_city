@@ -10,9 +10,11 @@ import 'package:provider/provider.dart';
 import 'package:latlong2/latlong.dart' as latlong;
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:geocoding/geocoding.dart' as geo;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../../features/reports/domain/models/complaint.dart';
 import '../../../../features/reports/presentation/providers/complaints_provider.dart';
+import '../../../../core/config/api_config.dart';
 
 class ReportIssuePage extends StatefulWidget {
   final File initialImage;
@@ -24,17 +26,19 @@ class ReportIssuePage extends StatefulWidget {
 
 class _ReportIssuePageState extends State<ReportIssuePage> {
   final _formKey = GlobalKey<FormState>();
-  String? _selectedCategory;
+  String? _selectedCategory = 'Auto-Detect (AI)';
   String _selectedPriority = 'Normal';
-  DateTime? _selectedDueDate;
   File? _imageFile;
   String? _locationAddress;
+  String? _detectedDistrict;
   latlong.LatLng? _currentLatLng;
   bool _isLoadingLocation = false;
   bool _isSubmitting = false;
-  final TextEditingController _descriptionController = TextEditingController();
+  bool _isAnalyzing = false;
+  final TextEditingController _descriptionController = TextEditingController(text: 'Auto-Generate (AI)');
 
   final List<String> _categories = [
+    'Auto-Detect (AI)',
     'Damaged concrete structures',
     'Damaged Electrical Poles',
     'Damaged Road Signs',
@@ -46,11 +50,11 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
     'Potholes and Road Cracks',
   ];
 
-  final List<String> _priorities = ['Low', 'Normal', 'High', 'Urgent'];
+  final List<String> _priorities = ['Normal', 'Medium', 'High', 'Urgent'];
 
   final Map<String, Color> _priorityColors = {
-    'Low': const Color(0xFF10B981),
-    'Normal': const Color(0xFF4FC3F7),
+    'Normal': const Color(0xFF10B981),
+    'Medium': const Color(0xFF4FC3F7),
     'High': const Color(0xFFF59E0B),
     'Urgent': const Color(0xFFEF4444),
   };
@@ -60,6 +64,9 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
     super.initState();
     _imageFile = widget.initialImage;
     _fetchLocation();
+    if (_imageFile != null) {
+      _analyzeImage();
+    }
   }
 
   /// Robust location fetch — no reverse geocoding to avoid errors.
@@ -133,6 +140,21 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
   /// Optional background reverse geocoding via Nominatim.
   /// Updates the address display silently — never breaks the main flow.
   Future<void> _tryReverseGeocode(Position position) async {
+    // 1. Precise geocoding via geocoding package (for District/City)
+    try {
+      List<geo.Placemark> placemarks = await geo.placemarkFromCoordinates(position.latitude, position.longitude);
+      if (placemarks.isNotEmpty) {
+        final pm = placemarks.first;
+        setState(() {
+          _detectedDistrict = pm.subAdministrativeArea; // This is usually the District (e.g. Anand)
+        });
+        debugPrint('Detected District: $_detectedDistrict');
+      }
+    } catch (e) {
+      debugPrint('Geocoding error: $e');
+    }
+
+    // 2. Human readable address via Nominatim
     try {
       final url = Uri.parse(
           'https://nominatim.openstreetmap.org/reverse?format=jsonv2'
@@ -198,9 +220,51 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
 
     if (mounted) {
       setState(() {
-        _imageFile =
-            File(compressedFile?.path ?? pickedFile.path);
+        _imageFile = File(compressedFile?.path ?? pickedFile.path);
       });
+      _analyzeImage();
+    }
+  }
+
+  Future<void> _analyzeImage() async {
+    if (_imageFile == null) return;
+    
+    setState(() => _isAnalyzing = true);
+    
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+
+      var request = http.MultipartRequest('POST', Uri.parse(ApiConfig.analyzeImageUrl));
+      request.headers['Authorization'] = 'Bearer $token';
+      request.files.add(await http.MultipartFile.fromPath('image', _imageFile!.path));
+
+      var streamedResponse = await request.send();
+      var response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200 && mounted) {
+        final data = jsonDecode(response.body);
+        setState(() {
+          _selectedCategory = data['category'];
+          _descriptionController.text = data['description'];
+          // Update priority from AI results
+          if (data['priority'] != null) {
+            String p = data['priority'].toString();
+            // Capitalize first letter to match our list
+            if (p.isNotEmpty) {
+               p = p[0].toUpperCase() + p.substring(1).toLowerCase();
+            }
+            if (_priorities.contains(p)) {
+              _selectedPriority = p;
+            }
+          }
+        });
+      }
+    } catch (e) {
+      debugPrint('Analysis error: $e');
+    } finally {
+      if (mounted) setState(() => _isAnalyzing = false);
     }
   }
 
@@ -354,49 +418,63 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
                         _buildImageSection(),
                         const SizedBox(height: 24),
 
-                        // ── Category ─────────────────────────────────────
-                        _sectionLabel('Issue Type'),
-                        const SizedBox(height: 8),
-                        _buildSelectorTile(
-                          icon: Icons.category_rounded,
-                          label: _selectedCategory ?? 'Select issue type',
-                          isEmpty: _selectedCategory == null,
-                          accentColor: const Color(0xFF4FC3F7),
-                          onTap: () => _showPicker(
-                            title: 'Select Issue Type',
-                            options: _categories,
-                            selected: _selectedCategory,
-                            onSelect: (v) =>
-                                setState(() => _selectedCategory = v),
+                        if (_isAnalyzing)
+                          Center(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 40),
+                              child: Column(
+                                children: [
+                                  const CircularProgressIndicator(color: Color(0xFF4FC3F7)),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'AI is analyzing the issue...',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.6),
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Generating description & priority',
+                                    style: TextStyle(
+                                      color: Colors.white.withOpacity(0.3),
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        else ...[
+                          // ── Category ─────────────────────────────────────
+                          _sectionLabel('Issue Type'),
+                          const SizedBox(height: 8),
+                          _buildSelectorTile(
+                            icon: Icons.category_rounded,
+                            label: _selectedCategory ?? 'Select issue type',
+                            isEmpty: _selectedCategory == null,
+                            accentColor: const Color(0xFF4FC3F7),
+                            onTap: () => _showPicker(
+                              title: 'Select Issue Type',
+                              options: _categories,
+                              selected: _selectedCategory,
+                              onSelect: (v) =>
+                                  setState(() => _selectedCategory = v),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // ── Priority ──────────────────────────────────────
-                        _sectionLabel('Priority'),
-                        const SizedBox(height: 8),
-                        _buildPriorityRow(),
-                        const SizedBox(height: 16),
-
-                        // ── Due Date ──────────────────────────────────────
-                        _sectionLabel('Due Date'),
-                        const SizedBox(height: 8),
-                        _buildSelectorTile(
-                          icon: Icons.calendar_today_rounded,
-                          label: _selectedDueDate == null
-                              ? 'Select due date (optional)'
-                              : '${_selectedDueDate!.day}/${_selectedDueDate!.month}/${_selectedDueDate!.year}',
-                          isEmpty: _selectedDueDate == null,
-                          accentColor: const Color(0xFF818CF8),
-                          onTap: _pickDate,
-                        ),
-                        const SizedBox(height: 16),
-
-                        // ── Description ──────────────────────────────────
-                        _sectionLabel('Description'),
-                        const SizedBox(height: 8),
-                        _buildDescriptionField(),
-                        const SizedBox(height: 16),
+                          const SizedBox(height: 16),
+  
+                          // ── Priority ──────────────────────────────────────
+                          _sectionLabel('Priority'),
+                          const SizedBox(height: 8),
+                          _buildPriorityRow(),
+                          const SizedBox(height: 16),
+  
+                          // ── Description ──────────────────────────────────
+                          _sectionLabel('Description'),
+                          const SizedBox(height: 8),
+                          _buildDescriptionField(),
+                          const SizedBox(height: 16),
+                        ],
 
                         // ── Location ─────────────────────────────────────
                         _buildLocationCard(),
@@ -644,30 +722,7 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
     );
   }
 
-  Future<void> _pickDate() async {
-    final date = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now().add(const Duration(days: 1)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.dark(
-              primary: Color(0xFF4FC3F7),
-              onPrimary: Colors.white,
-              surface: Color(0xFF0A2744),
-              onSurface: Colors.white,
-            ),
-          ),
-          child: child!,
-        );
-      },
-    );
-    if (date != null && mounted) {
-      setState(() => _selectedDueDate = date);
-    }
-  }
+
 
   Widget _buildDescriptionField() {
     return Container(
@@ -833,17 +888,20 @@ class _ReportIssuePageState extends State<ReportIssuePage> {
     setState(() => _isSubmitting = true);
 
     try {
+      String categoryToSend = _selectedCategory == 'Auto-Detect (AI)' ? 'Auto-Detect' : _selectedCategory!;
+      String descToSend = _descriptionController.text.isEmpty || _descriptionController.text == 'Auto-Generate (AI)' ? 'Auto-Generate' : _descriptionController.text;
+
       final newComplaint = Complaint(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
-        title: '$_selectedCategory - Reported Issue',
-        description: _descriptionController.text,
-        category: _selectedCategory!,
+        title: '$categoryToSend - Reported Issue',
+        description: descToSend,
+        category: categoryToSend,
         status: ComplaintStatus.registered,
         priority: _selectedPriority,
-        dueDate: _selectedDueDate,
         location: _currentLatLng ??
             const latlong.LatLng(20.5937, 78.9629),
         address: _locationAddress ?? 'Unknown Location',
+        district: _detectedDistrict,
         timestamp: DateTime.now(),
         imagePath: _imageFile?.path,
       );

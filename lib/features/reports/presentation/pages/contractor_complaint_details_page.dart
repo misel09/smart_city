@@ -436,30 +436,15 @@ class _ContractorComplaintDetailsPageState
                       ),
                       const SizedBox(height: 28),
 
-                      // ── Priority & Due Date ───────────────────────────────
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _infoCard(
-                              label: 'Priority',
-                              value: c.priority,
-                              color: c.priority == 'Urgent'
-                                  ? Colors.red
-                                  : c.priority == 'High'
-                                      ? Colors.orange
-                                      : null,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _infoCard(
-                              label: 'Due By',
-                              value: c.dueDate != null
-                                  ? dateFormat.format(c.dueDate!)
-                                  : 'Not Set',
-                            ),
-                          ),
-                        ],
+                      // ── Priority ───────────────────────────────
+                      _infoCard(
+                        label: 'Priority',
+                        value: c.priority,
+                        color: c.priority == 'Urgent'
+                            ? Colors.red
+                            : c.priority == 'High'
+                                ? Colors.orange
+                                : null,
                       ),
                       const SizedBox(height: 28),
 

@@ -20,6 +20,12 @@ class TaskResolutionPage extends StatefulWidget {
 }
 
 class _TaskResolutionPageState extends State<TaskResolutionPage> {
+  @override
+  void initState() {
+    super.initState();
+    _getCurrentLocation();
+  }
+
   final _descriptionController = TextEditingController();
   File? _imageFile;
   bool _isSubmitting = false;

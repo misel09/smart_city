@@ -285,37 +285,20 @@ class _TaskCard extends StatelessWidget {
                           ),
                         ],
                       ),
-                      if (complaint.dueDate != null)
-                        Row(
-                          children: [
-                            Icon(Icons.assignment_late_rounded,
-                                color: Colors.redAccent.withOpacity(0.8),
-                                size: 14),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Due: ${dateFormat.format(complaint.dueDate!)}',
-                              style: TextStyle(
-                                  color: Colors.redAccent.withOpacity(0.8),
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        )
-                      else
-                        Row(
-                          children: [
-                            Icon(Icons.location_on_rounded,
+                      Row(
+                        children: [
+                          Icon(Icons.location_on_rounded,
+                              color: Colors.white.withOpacity(0.4),
+                              size: 14),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Location Attached',
+                            style: TextStyle(
                                 color: Colors.white.withOpacity(0.4),
-                                size: 14),
-                            const SizedBox(width: 6),
-                            Text(
-                              'Location Attached',
-                              style: TextStyle(
-                                  color: Colors.white.withOpacity(0.4),
-                                  fontSize: 13),
-                            ),
-                          ],
-                        ),
+                                fontSize: 13),
+                          ),
+                        ],
+                      ),
                     ],
                   )
                 ],

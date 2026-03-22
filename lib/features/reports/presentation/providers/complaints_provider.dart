@@ -9,10 +9,12 @@ class ComplaintsProvider extends ChangeNotifier {
   List<Complaint> _myComplaints = [];
   List<Complaint> _nearbyComplaints = [];
   List<Complaint> _takenComplaints = [];
+  List<Complaint> _allComplaints = [];
 
   List<Complaint> get myComplaints => _myComplaints;
   List<Complaint> get nearbyComplaints => _nearbyComplaints;
   List<Complaint> get takenComplaints => _takenComplaints;
+  List<Complaint> get allComplaints => _allComplaints;
   
   // Keep an alias for backwards compatibility if needed during refactor, though we'll update widgets soon.
   List<Complaint> get complaints => _myComplaints;
@@ -98,6 +100,34 @@ class ComplaintsProvider extends ChangeNotifier {
     }
   }
 
+  Future<void> fetchAllComplaints(String token) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.complaintsUrl}/'),
+        headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = json.decode(response.body);
+        _allComplaints = data.map((json) => Complaint.fromJson(json)).toList();
+        _allComplaints.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      } else {
+        print('Failed to load all complaints: ${response.statusCode}');
+      }
+    } catch (e) {
+      print('Error loading all complaints: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> addComplaint(Complaint complaint, String token) async {
     _myComplaints.insert(0, complaint);
     // Optimistically add to nearby complaints since the user is presumably at that location
@@ -114,10 +144,10 @@ class ComplaintsProvider extends ChangeNotifier {
       request.fields['latitude'] = complaint.location.latitude.toString();
       request.fields['longitude'] = complaint.location.longitude.toString();
       request.fields['address'] = complaint.address;
-      request.fields['priority'] = complaint.priority;
-      if (complaint.dueDate != null) {
-        request.fields['due_date'] = complaint.dueDate!.toIso8601String();
+      if (complaint.district != null) {
+        request.fields['district'] = complaint.district!;
       }
+      request.fields['priority'] = complaint.priority;
       
       if (complaint.imagePath != null && complaint.imagePath!.isNotEmpty) {
         request.files.add(await http.MultipartFile.fromPath('image', complaint.imagePath!));

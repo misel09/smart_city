@@ -38,7 +38,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
       // 1. Load Login Logs
       final prefs = await SharedPreferences.getInstance();
       final currentUserEmail = prefs.getString('currentUserEmail') ?? '';
-      final userRole = prefs.getString('role') ?? (widget.isContractor ? 'contractor' : 'user');
+      final userRole = prefs.getString('role') ?? (widget.isContractor ? 'contractor' : 'citizen');
       
       final loginKey = 'login_history_${currentUserEmail.toLowerCase()}_$userRole';
       final loginLogsString = prefs.getString(loginKey);

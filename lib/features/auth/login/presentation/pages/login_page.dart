@@ -3,6 +3,8 @@ import 'package:smart_city/core/theme/app_colors.dart';
 import 'package:smart_city/features/home/presentation/pages/home_page.dart';
 import 'package:smart_city/features/auth/register/presentation/pages/register_page.dart';
 import 'package:smart_city/features/contractor/presentation/pages/contractor_dashboard_page.dart';
+import 'package:smart_city/features/officer/presentation/pages/officer_dashboard_page.dart';
+import 'package:smart_city/features/officer/presentation/pages/officer_main_page.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -27,10 +29,10 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _rememberMe = false;
 
-  String _selectedRole = 'User';
+  String? _selectedRole;
   String? _selectedContractorType;
 
-  final List<String> _roles = ['User', 'Contractor'];
+  final List<String> _roles = ['Citizen', 'Contractor', 'Municipality Officer'];
   final List<String> _contractorTypes = [
     'Civil / Structural Repair Contractor',
     'Electrical Contractor',
@@ -43,9 +45,79 @@ class _LoginPageState extends State<LoginPage> {
     'Road Construction'
   ];
 
+  String? _lastSavedEmail;
+  String? _lastSavedPassword;
+  String? _lastSavedRole;
+  String? _lastSavedName;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedAccount();
+  }
+
+  Future<void> _loadSavedAccount() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _lastSavedEmail = prefs.getString('saved_email');
+      _lastSavedPassword = prefs.getString('saved_password');
+      _lastSavedRole = prefs.getString('saved_role');
+      _lastSavedName = prefs.getString('saved_name');
+    });
+  }
+
+  Future<void> _saveSavedAccount(String email, String password, String role, String name) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('saved_email', email);
+    await prefs.setString('saved_password', password);
+    await prefs.setString('saved_role', role);
+    await prefs.setString('saved_name', name);
+  }
+
+  Future<void> _clearSavedAccount() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('saved_email');
+    await prefs.remove('saved_password');
+    await prefs.remove('saved_role');
+    await prefs.remove('saved_name');
+    setState(() {
+      _lastSavedEmail = null;
+      _lastSavedPassword = null;
+      _lastSavedRole = null;
+      _lastSavedName = null;
+    });
+  }
+
+  Future<void> _quickLogin() async {
+    if (_lastSavedEmail == null || _lastSavedPassword == null || _lastSavedRole == null) return;
+    
+    _emailController.text = _lastSavedEmail!;
+    _passwordController.text = _lastSavedPassword!;
+    
+    // Map role string back to display name for dropdown
+    final roleDisplayName = _roles.firstWhere(
+      (r) => r.toLowerCase().replaceAll(' ', '_').trim() == _lastSavedRole,
+      orElse: () => _roles[0]
+    );
+    
+    setState(() {
+      _selectedRole = roleDisplayName;
+      _isLoading = true;
+    });
+    
+    await _login();
+  }
+
   Future<void> _login() async {
     setState(() => _isLoading = true);
 
+    if (_selectedRole == null || _selectedRole!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a role')),
+      );
+      setState(() => _isLoading = false);
+      return;
+    }
     if (_emailController.text.isEmpty || _passwordController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please fill in all fields')),
@@ -64,7 +136,7 @@ class _LoginPageState extends State<LoginPage> {
         body: jsonEncode({
           'email': _emailController.text,
           'password': _passwordController.text,
-          'role': _selectedRole.toLowerCase(),
+          'role': _selectedRole!.toLowerCase().replaceAll(' ', '_'),
           'contractor_type': _selectedContractorType,
         }),
       );
@@ -73,13 +145,26 @@ class _LoginPageState extends State<LoginPage> {
         final data = jsonDecode(response.body);
         final token = data['access_token'];
         
-        final prefs = await SharedPreferences.getInstance();
-        await prefs.setString('token', token);
-        await prefs.setString('role', _selectedRole.toLowerCase().trim());
-        await prefs.setString('currentUserEmail', _emailController.text.trim().toLowerCase());
+          final prefs = await SharedPreferences.getInstance();
+          final roleKey = _selectedRole!.toLowerCase().replaceAll(' ', '_').trim();
+          await prefs.setString('token', token);
+          await prefs.setString('role', roleKey);
+          await prefs.setString('currentUserEmail', _emailController.text.trim().toLowerCase());
+          
+          // Save for Remember Me if enabled
+          if (_rememberMe) {
+            // In a real app, you might get the user's name from data['user']['name']
+            final userName = data['name'] ?? data['fullname'] ?? _emailController.text.split('@')[0];
+            await _saveSavedAccount(
+              _emailController.text.trim(), 
+              _passwordController.text, 
+              roleKey, 
+              userName
+            );
+          }
         
         // Log this login using scoped key
-        final historyKey = 'login_history_${_emailController.text.trim().toLowerCase()}_${_selectedRole.toLowerCase().trim()}';
+        final historyKey = 'login_history_${_emailController.text.trim().toLowerCase()}_$roleKey';
         final loginHistory = prefs.getString(historyKey);
         List<dynamic> logs = loginHistory != null ? jsonDecode(loginHistory) : [];
         logs.add(DateTime.now().toIso8601String());
@@ -94,6 +179,11 @@ class _LoginPageState extends State<LoginPage> {
             Navigator.pushReplacement(
               context,
               MaterialPageRoute(builder: (context) => const ContractorDashboardPage()),
+            );
+          } else if (_selectedRole == 'Municipality Officer') {
+            Navigator.pushReplacement(
+              context,
+              MaterialPageRoute(builder: (context) => const MunicipalityOfficerMainPage()),
             );
           } else {
             Navigator.pushReplacement(
@@ -122,6 +212,19 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _loginWithGoogle() async {
+    if (_selectedRole == null || _selectedRole!.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select your role (Citizen or Contractor)')),
+      );
+      return;
+    }
+
+    if (_selectedRole == 'Municipality Officer') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Google Login is not allowed for Municipality Officers. Please use your officer credentials.')),
+      );
+      return;
+    }
     setState(() => _isLoading = true);
     try {
       final accountData = await signInWithGoogle();
@@ -140,7 +243,7 @@ class _LoginPageState extends State<LoginPage> {
           'email': accountData['email'],
           'name': accountData['name'],
           'google_id': accountData['google_id'],
-          'role': _selectedRole.toLowerCase(),
+          'role': _selectedRole!.toLowerCase().replaceAll(' ', '_'),
           'contractor_type': _selectedContractorType,
         }),
       );
@@ -160,7 +263,7 @@ class _LoginPageState extends State<LoginPage> {
                   email: accountData['email']!,
                   name: accountData['name']!,
                   googleId: accountData['google_id']!,
-                  role: _selectedRole,
+                   role: _selectedRole!,
                   contractorType: _selectedContractorType,
                 ),
               ),
@@ -170,13 +273,14 @@ class _LoginPageState extends State<LoginPage> {
         }
 
         final prefs = await SharedPreferences.getInstance();
+        final roleKey = _selectedRole!.toLowerCase().replaceAll(' ', '_').trim();
         await prefs.setString('token', body['access_token']);
-        await prefs.setString('role', _selectedRole.toLowerCase().trim());
+        await prefs.setString('role', roleKey);
         final email = accountData['email']!.toLowerCase();
         await prefs.setString('currentUserEmail', email);
-        
+
         // Log this login using scoped key
-        final historyKey = 'login_history_${email}_${_selectedRole.toLowerCase().trim()}';
+        final historyKey = 'login_history_${email}_$roleKey';
         final loginHistory = prefs.getString(historyKey);
         List<dynamic> logs = loginHistory != null ? jsonDecode(loginHistory) : [];
         logs.add(DateTime.now().toIso8601String());
@@ -191,7 +295,9 @@ class _LoginPageState extends State<LoginPage> {
             MaterialPageRoute(
               builder: (_) => _selectedRole == 'Contractor'
                   ? const ContractorDashboardPage()
-                  : const HomePage(),
+                  : _selectedRole == 'Municipality Officer'
+                      ? const MunicipalityOfficerMainPage()
+                      : const HomePage(),
             ),
           );
         }
@@ -327,8 +433,10 @@ class _LoginPageState extends State<LoginPage> {
                         // Role Selection
                         const Text("Select Role", style: TextStyle(color: Colors.white70, fontSize: 12)),
                         const SizedBox(height: 8),
-                        DropdownButtonFormField<String>(
+                         DropdownButtonFormField<String>(
+                          isExpanded: true,
                           value: _selectedRole,
+                          hint: const Text("Select Role (e.g., Citizen)"),
                           items: _roles.map((role) {
                             return DropdownMenuItem(value: role, child: Text(role));
                           }).toList(),
@@ -474,57 +582,102 @@ class _LoginPageState extends State<LoginPage> {
                             onPressed: _isLoading ? null : _login,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF2196F3), // Bright Blue
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(27), // Fully rounded caps
-                              ),
-                            ),
-                            child: _isLoading 
-                              ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                              : const Text(
-                                "Sign In",
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(27), // Fully rounded caps
                                 ),
                               ),
+                              child: _isLoading 
+                                ? const SizedBox(height: 24, width: 24, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                : const Text(
+                                  "Sign In",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
                           ),
                         ),
 
                         const SizedBox(height: 16),
-                        
-                        const SizedBox(height: 16),
-                        
-                        // Google Sign In Button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 54,
-                          child: OutlinedButton(
-                            onPressed: _isLoading ? null : _loginWithGoogle,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              side: const BorderSide(color: Colors.white54, width: 1),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(27),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Image.asset('assets/images/google_logo.png', height: 24, width: 24, errorBuilder: (context, error, stackTrace) => const Icon(Icons.g_mobiledata, color: Colors.white, size: 30)),
-                                const SizedBox(width: 12),
-                                const Text(
-                                  "Sign in with Google",
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
+                        // Google Sign In Button - Hidden for Municipality Officer
+                        if (_selectedRole != 'Municipality Officer') ...[
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 54,
+                            child: OutlinedButton(
+                              onPressed: _isLoading ? null : _loginWithGoogle,
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                  side: const BorderSide(color: Colors.white54, width: 1),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(27),
                                   ),
                                 ),
-                              ],
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Image.asset('assets/images/google_logo.png', height: 24, width: 24, errorBuilder: (context, error, stackTrace) => const Icon(Icons.g_mobiledata, color: Colors.white, size: 30)),
+                                    const SizedBox(width: 12),
+                                    const Text(
+                                      "Sign in with Google",
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
+
+                        if (_lastSavedEmail != null) ...[
+                          const SizedBox(height: 24),
+                          const Divider(color: Colors.white24, height: 1),
+                          const SizedBox(height: 24),
+                          const Center(
+                            child: Text(
+                              "Saved Account",
+                              style: TextStyle(color: Colors.white60, fontSize: 13, fontWeight: FontWeight.w500),
                             ),
                           ),
-                        ),
+                          const SizedBox(height: 16),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.white.withOpacity(0.1)),
+                            ),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              leading: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF4FC3F7).withOpacity(0.2),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.person_outline_rounded, color: Color(0xFF4FC3F7)),
+                              ),
+                              title: Text(
+                                _lastSavedName ?? 'User',
+                                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text(
+                                _lastSavedEmail!,
+                                style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
+                              ),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.close_rounded, color: Colors.white38, size: 20),
+                                onPressed: _clearSavedAccount,
+                                tooltip: "Forget Account",
+                              ),
+                              onTap: _isLoading ? null : _quickLogin,
+                            ),
+                          ),
+                        ],
 
                         const SizedBox(height: 32),
                         
@@ -545,6 +698,7 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                           ],
                         ),
+                        
                         const SizedBox(height: 40), // Bottom safe area
                       ],
                     ),

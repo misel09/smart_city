@@ -72,7 +72,7 @@ class _ProfilePageState extends State<ProfilePage> {
   void _handleLogout(BuildContext context) async {
     final prefs = await SharedPreferences.getInstance();
     final email = prefs.getString('currentUserEmail') ?? widget.userEmail.toLowerCase();
-    final role = prefs.getString('role') ?? 'user';
+    final role = prefs.getString('role') ?? 'citizen';
     
     // Log this logout using scoped key
     final historyKey = 'logout_history_${email.toLowerCase()}_$role';
@@ -135,7 +135,7 @@ class _ProfilePageState extends State<ProfilePage> {
       if (response.statusCode == 200 && context.mounted) {
         // Successfully deleted
         final email = prefs.getString('currentUserEmail') ?? widget.userEmail.toLowerCase();
-        final role = prefs.getString('role') ?? 'user';
+        final role = prefs.getString('role') ?? 'citizen';
         await prefs.remove('login_history_${email.toLowerCase()}_$role');
         await prefs.remove('logout_history_${email.toLowerCase()}_$role');
         await prefs.remove('token');
@@ -210,7 +210,7 @@ class _ProfilePageState extends State<ProfilePage> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        widget.userName.isNotEmpty ? widget.userName : 'User',
+                        widget.userName.isNotEmpty ? widget.userName : 'Citizen',
                         style: const TextStyle(
                           color: Colors.white,
                           fontSize: 28,
