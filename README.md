@@ -1,206 +1,124 @@
-# 🏙️ UrbanFix — Smart City Issue Management Platform
+# 🏙️ Smart City — Urban Issue Management Platform
 
-> **Empowering citizens to report, track, and resolve urban issues — powered by Flutter, FastAPI, and soon, AI.**
+![Smart City Banner](https://img.shields.io/badge/Status-In--Development-blue?style=for-the-badge)
+![Flutter](https://img.shields.io/badge/Flutter-02569B?style=for-the-badge&logo=flutter&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-005863?style=for-the-badge&logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)
 
-UrbanFix is a full-stack mobile application that connects **citizens** and **contractors** to streamline the detection and resolution of urban problems like potholes, broken streetlights, water leaks, and more. Citizens report issues with photos and GPS, contractors pick up and resolve tasks, and every step is tracked in real time.
+> **Empowering communities through seamless incident reporting, real-time collaboration, and data-driven infrastructure management.**
 
----
-
-## 📱 Overview
-
-**Smart City** allows citizens to report urban problems (potholes, broken streetlights, water leaks, etc.) directly from their phones. Contractors can then pick up tasks, resolve them, and upload visual proof. Citizens can track the status of their complaints in real time and leave reviews.
-
----
-
-## ✨ Features
-
-### 👤 Citizens
-- Register / Login with Email & Password or Google Sign-In
-- Report urban issues with photo, location (GPS), category, and description
-- Track complaint status in real time (`Registered → In Progress → Resolved`)
-- View contractor details once a complaint is accepted
-- Leave a review after complaint resolution
-- View complaints on an interactive map
-
-### 🔧 Contractors
-- Register / Login as a contractor with a specific contractor type
-- View and filter available complaints (nearby tasks)
-- Accept tasks (requires verified mobile number)
-- Upload before/after images and resolution description
-- View personal work statistics (total, in-progress, resolved)
-- Manage profile and mobile number
-
-### 🔐 Authentication
-- Email/password registration with password strength validation
-- Google Sign-In with role selection
-- JWT-based session management
+Smart City is a cutting-edge, full-stack ecosystem designed to modernize urban incident management. By connecting **Citizens** directly with **Contractors** and **City Officials**, the platform eliminates bureaucratic delays in resolving critical urban issues such as infrastructure damage, utility failures, and public safety hazards.
 
 ---
 
-## 🛠️ Tech Stack
+## 📱 Core Platform Experience
 
-### Frontend (Flutter)
-| Package | Purpose |
-|---|---|
-| `flutter_map` + `latlong2` | Interactive map view |
-| `geolocator` + `geocoding` | GPS & address resolution |
-| `image_picker` | Camera / gallery image upload |
-| `provider` | State management |
-| `google_sign_in` | Google OAuth |
-| `cached_network_image` | Efficient image loading |
-| `google_fonts` | Custom typography |
-| `shared_preferences` | Local session storage |
+Smart City provides a multi-layered interface optimized for different stakeholders, ensuring every report is actionable and every resolution is verified.
 
-### Backend (Python / FastAPI)
-| Tech | Purpose |
-|---|---|
-| `FastAPI` | REST API framework |
-| `SQLAlchemy` | ORM for database models |
-| `PostgreSQL` | Primary database |
-| `python-jose` | JWT authentication |
-| `bcrypt` | Password hashing |
-| `Pydantic` | Data validation |
-| `uvicorn` | ASGI server |
+### 👤 Citizen Interface
+*   **Precision Incident Reporting**: Submit detailed reports with high-resolution imagery, automatic GPS-tagged metadata, and intuitive categorization.
+*   **Radius-Based Exploration**: Explore regional issues through an interactive map with customizable radius filtering (**10km, 25km, 50km**).
+*   **Transparent Lifecycle Tracking**: Monitor incidents through a real-time status timeline: `Registered` → `In Progress` → `Resolved`.
+*   **Community Verification**: Provide direct reviews and quality ratings upon task completion to ensure accountability.
+
+### 🔧 Contractor Management
+*   **Proximity-Driven Work Queue**: Access a specialized dashboard filtering nearby available tasks based on contractor certification and location.
+*   **Operational Workflows**: Accept and manage tasks with an integrated proof-of-work system requiring visual verification.
+*   **Performance Analytics**: View historical work statistics including completion rates, average resolution times, and community ratings.
+
+### 👮 Officer Oversight (Admin)
+*   **District-Wide Monitoring**: Comprehensive dashboard for monitoring all active reports across the city.
+*   **Data Visualization**: Heatmaps and analytical views to identify high-density problem areas and prioritize resource allocation.
 
 ---
 
-## 🤖 AI Roadmap (Coming Soon)
+## 🛠️ Technical Architecture
 
-The next major milestone for UrbanFix is integrating an **AI-powered issue detection model**:
+Smart City is built on a high-concurrency, scalable tech stack designed for reliability and performance.
 
-- 📸 **Auto-detect issue type** from a citizen's uploaded photo (e.g., pothole, flood, broken light)
-- 🏷️ **Auto-fill category and priority** based on image analysis — no manual selection needed
-- 🗺️ **Severity estimation** to help prioritize contractor task queues
-- 🔄 Built using a custom-trained **image classification model** (CNN / MobileNet)
+### Frontend Engine (Flutter)
+| Component | Implementation |
+| :--- | :--- |
+| **Map Rendering** | `flutter_map` with `latlong2` for high-performance vector/tile maps. |
+| **Geospatial Services** | `geolocator` for precise user positioning and `geocoding` for address lookup. |
+| **State Management** | `Provider` pattern for reactive, predictable UI updates. |
+| **Media Handling** | `image_picker` and `cached_network_image` for optimized visual data processing. |
 
-> This will make reporting as simple as *take a photo → submit* — the app handles the rest.
+### Backend Infrastructure (FastAPI & Python)
+| Component | Implementation |
+| :--- | :--- |
+| **Kernel** | `FastAPI` (Asynchronous ASGI) for lightning-fast request handling. |
+| **Persistence Layer** | `PostgreSQL` for robust, relational data storage. |
+| **ORM** | `SQLAlchemy` for structured, type-safe database interactions. |
+| **Authorization** | `python-jose` for secure JWT session management and `bcrypt` for credential hashing. |
 
 ---
 
-## 📁 Project Structure
+## 📊 Incident Lifecycle
 
-```
-smart_city/
-├── lib/
-│   ├── core/
-│   │   ├── config/         # API configuration
-│   │   └── theme/          # App colors & theme
-│   └── features/
-│       ├── auth/           # Login, Register, Google Sign-In
-│       ├── home/           # Citizen dashboard, map, report issue
-│       ├── reports/        # Complaint details, status timeline
-│       ├── contractor/     # Contractor dashboard, tasks, profile
-│       ├── profile/        # Citizen profile page
-│       └── splash/         # Splash screen
-├── backend/
-│   ├── main.py             # FastAPI app entry point
-│   ├── models.py           # SQLAlchemy DB models
-│   ├── schemas.py          # Pydantic schemas
-│   ├── auth.py             # JWT & authentication logic
-│   ├── database.py         # DB connection setup
-│   ├── routers/            # API route handlers
-│   └── requirements.txt    # Python dependencies
-└── assets/
-    └── images/             # App assets
+```mermaid
+graph TD
+    A[Citizen: Reports Issue] --> B{Validation Engine}
+    B -->|Verified| C[Registered Status]
+    C -->|Contractor Acccepts| D[In Progress Status]
+    D -->|Uploads Proof| E[Resolved Status]
+    E -->|Feedback Given| F[Closed & Reviewed]
 ```
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Deployment & Configuration
 
-### Prerequisites
-- [Flutter SDK](https://flutter.dev/docs/get-started/install) (Dart ≥ 3.10)
-- [Python 3.10+](https://www.python.org/)
-- [PostgreSQL](https://www.postgresql.org/)
-- A Firebase project (for Google Sign-In)
+### 🔧 Backend Environment
+1.  **Orchestration**:
+    ```bash
+    cd backend
+    python -m venv venv
+    source venv/bin/activate # Windows: venv\Scripts\activate
+    pip install -r requirements.txt
+    ```
+2.  **Environment Setup**: Create a `.env` file in the `backend/` directory:
+    ```env
+    DATABASE_URL=postgresql://[user]:[pass]@localhost:5432/smart_city
+    SECRET_KEY=[your_secure_hex_key]
+    ALGORITHM=HS256
+    ```
+3.  **Launch**:
+    ```bash
+    uvicorn main:app --reload --host 0.0.0.0 --port 8000
+    ```
 
----
-
-### 🔧 Backend Setup
-
-```bash
-# Navigate to backend
-cd backend
-
-# Create a virtual environment
-python -m venv venv
-venv\Scripts\activate      # Windows
-# source venv/bin/activate  # macOS/Linux
-
-# Install dependencies
-pip install -r requirements.txt
-```
-
-Create a `.env` file inside `backend/`:
-```env
-DATABASE_URL=postgresql://username:password@localhost/smart_city_db
-SECRET_KEY=your_jwt_secret_key
-ALGORITHM=HS256
-ACCESS_TOKEN_EXPIRE_MINUTES=60
-```
-
-```bash
-# Run the backend server
-uvicorn main:app --reload
-```
-
-API will be available at: `http://localhost:8000`  
-Docs at: `http://localhost:8000/docs`
+### 📱 Mobile Application
+1.  **Dependencies**:
+    ```bash
+    flutter pub get
+    ```
+2.  **Configuration**:
+    *   Add your Firebase `google-services.json` to `android/app/`.
+    *   Configure `lib/core/config/api_config.dart` with your server's endpoint.
+3.  **Build**:
+    ```bash
+    flutter run
+    ```
 
 ---
 
-### 📱 Flutter App Setup
+## 🤖 Future Innovations (AI Roadmap)
 
-```bash
-# Install Flutter dependencies
-flutter pub get
-
-# Run the app
-flutter run
-```
-
-> ⚠️ **Important:** The `google-services.json` (Firebase config) is excluded from this repo for security. You must add your own `android/app/google-services.json` from your Firebase console.
-
-Update the API base URL in `lib/core/config/api_config.dart` to point to your backend server.
+We are currently engineering a computer-vision-based **AI Layer** to further automate urban management:
+*   **Automatic Issue Classification**: Deep learning models to identify issue types (e.g., "Pothole" vs "Leaking Pipe") directly from images.
+*   **Severity Scoring**: AI-driven priority assignment to ensure critical safety hazards are addressed first.
+*   **Anomaly Detection**: Identifying repetitive infrastructure failures using historical data.
 
 ---
 
-## 📊 Complaint Status Flow
+## 🔒 Security Standards
 
-```
-Registered  →  In Progress  →  Resolved
-   (Citizen        (Contractor      (Contractor
-   submits)        accepts task)    uploads proof)
-                                        ↓
-                                  Citizen leaves
-                                    a review
-```
+*   **Credential Protection**: Industry-standard `BCRYPT` salting and hashing.
+*   **Stateless Security**: Robust `JWT` (JSON Web Tokens) for per-request authentication.
+*   **Data Integrity**: Strict Pydantic schema validation for all API inputs and outputs.
+*   **Privacy**: Minimal data collection focusing only on essential incident and location metadata.
 
 ---
 
-## 🔒 Security Notes
-
-- Passwords are hashed using `bcrypt`
-- Sessions are managed with JWT tokens
-- Firebase credentials (`google-services.json`) are **not committed** to the repo
-- Contractors must verify their mobile number before accepting tasks
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a new branch: `git checkout -b feature/your-feature`
-3. Commit your changes: `git commit -m "Add your feature"`
-4. Push the branch: `git push origin feature/your-feature`
-5. Open a Pull Request
-
----
-
-## 📄 License
-
-This project is for educational/academic purposes.
-
----
-
-> Built with ❤️ using Flutter & FastAPI
+> Created with passion for Sustainable Urban Development.
