@@ -8,7 +8,7 @@ class ApiConfig {
     } else if (Platform.isAndroid) {
       // Use LAN IP for specific device testing (update as needed)
       // Emulator: 10.0.2.2, Physical: 10.191.37.42
-      return 'http://10.191.37.42:8000';
+      return 'http://10.74.254.42:8000';
     } else {
       // For iOS simulator, macOS, or Windows
       return 'http://127.0.0.1:8000';

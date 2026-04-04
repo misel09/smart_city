@@ -33,6 +33,8 @@ class _MapViewPageState extends State<MapViewPage> {
   bool _hasMovedToLocation = false;
   String _selectedStatus = 'All'; 
   bool _isFilterExpanded = false;
+  double _selectedRadius = 10.0;
+  LatLng? _userLocation;
 
   @override
   void initState() {
@@ -106,47 +108,63 @@ class _MapViewPageState extends State<MapViewPage> {
     } catch (_) {}
   }
 
-  Future<void> _fetchNearbyComplaints() async {
+  Future<void> _fetchNearbyComplaints({LatLng? location}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final token = prefs.getString('token');
       if (token == null) return;
 
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: const Duration(seconds: 5),
-      );
-
-      if (mounted) {
+      LatLng currentPos;
+      if (location != null) {
+        currentPos = location;
+      } else {
+        final position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 5),
+        );
+        currentPos = LatLng(position.latitude, position.longitude);
         await prefs.setDouble('last_lat', position.latitude);
         await prefs.setDouble('last_lng', position.longitude);
+      }
 
+      if (mounted) {
+        setState(() {
+          _userLocation = currentPos;
+          _latLngCenter = currentPos;
+          if (!_hasMovedToLocation) {
+            _mapController.move(currentPos, 12.0);
+            _hasMovedToLocation = true;
+          }
+        });
+
+        // Trigger fetch asynchronously
         context.read<ComplaintsProvider>().fetchNearbyComplaints(
           token, 
-          position.latitude, 
-          position.longitude
+          currentPos.latitude, 
+          currentPos.longitude,
+          radius: _selectedRadius,
         ).then((_) {
            if (mounted) {
-              final count = context.read<ComplaintsProvider>().nearbyComplaints.length;
+              final bool isOfficer = _userRole.toLowerCase().contains('officer');
+              int count;
+              if (isOfficer) {
+                count = context.read<ComplaintsProvider>().nearbyComplaints.length;
+              } else {
+                count = context.read<ComplaintsProvider>().nearbyComplaints.where((c) {
+                  final status = c.status;
+                  return status == ComplaintStatus.registered || 
+                         status == ComplaintStatus.inProgress;
+                }).length;
+              }
+              
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Viewing $count issues near you'),
+                  content: Text('Viewing $count issues within ${_selectedRadius.toInt()}km'),
                   duration: const Duration(seconds: 2),
                   backgroundColor: const Color(0xFF0F172A),
                 ),
               );
            }
-        });
-        
-        Future.delayed(const Duration(milliseconds: 800), () {
-          if (mounted) {
-            _mapController.move(LatLng(position.latitude, position.longitude), 12.0);
-            setState(() {
-              _latLngCenter = LatLng(position.latitude, position.longitude);
-              _currentZoom = 12.0;
-              _hasMovedToLocation = true;
-            });
-          }
         });
       }
     } catch (_) {
@@ -252,6 +270,44 @@ class _MapViewPageState extends State<MapViewPage> {
                     urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                     userAgentPackageName: 'com.smartcity.app', 
                   ),
+                  if (!isOfficer && _userLocation != null)
+                    CircleLayer(
+                      circles: [
+                        CircleMarker(
+                          point: _userLocation!,
+                          radius: _selectedRadius * 1000, // Convert km to meters
+                          useRadiusInMeter: true,
+                          color: AppColors.primary.withOpacity(0.1),
+                          borderColor: AppColors.primary.withOpacity(0.3),
+                          borderStrokeWidth: 2,
+                        ),
+                      ],
+                    ),
+                  if (!isOfficer && _userLocation != null)
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: _userLocation!,
+                          width: 40,
+                          height: 40,
+                          alignment: Alignment.center,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: AppColors.primary.withOpacity(0.2),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 2),
+                            ),
+                            child: const Center(
+                              child: Icon(
+                                Icons.person_pin_circle,
+                                color: AppColors.primary,
+                                size: 30,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   Consumer<ComplaintsProvider>(
                     builder: (context, provider, child) {
                       // Determine which complaints to show
@@ -260,11 +316,12 @@ class _MapViewPageState extends State<MapViewPage> {
                       if (isOfficer) {
                         sourceComplaints = provider.allComplaints;
                       } else {
-                        // User and Contractor only see "Registered" and "In Progress" nearby issues
-                        sourceComplaints = provider.nearbyComplaints.where((c) => 
-                          c.status == ComplaintStatus.registered || 
-                          c.status == ComplaintStatus.inProgress
-                        ).toList();
+                        // User and Contractor ONLY see "Registered" and "In Progress" nearby issues
+                        sourceComplaints = provider.nearbyComplaints.where((c) {
+                          final status = c.status;
+                          return status == ComplaintStatus.registered || 
+                                 status == ComplaintStatus.inProgress;
+                        }).toList();
                       }
 
                       debugPrint('MapViewPage: Rendering markers. Role: [$_userRole], isOfficer: $isOfficer, Source: ${isOfficer ? "All" : "Nearby (Registered/InProgress)"}, Count: ${sourceComplaints.length}');
@@ -374,6 +431,14 @@ class _MapViewPageState extends State<MapViewPage> {
                 top: 50,
                 right: 20,
                 child: _buildStatusFilters(),
+              ),
+
+            if (!isOfficer)
+              Positioned(
+                bottom: 30,
+                left: 20,
+                right: 80, // Leave space for center FAB
+                child: _buildRadiusSelector(),
               ),
           ],
         ),
@@ -797,36 +862,91 @@ class _MapViewPageState extends State<MapViewPage> {
             ),
             if (_isFilterExpanded) ...[
               const SizedBox(height: 12),
-              ...filters.where((f) => f != _selectedStatus).map((f) => 
-                InkWell(
-                  onTap: () {
-                    setState(() {
-                      _selectedStatus = f;
-                      _isFilterExpanded = false;
-                    });
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      children: [
-                        Container(
-                          width: 8,
-                          height: 8,
-                          decoration: BoxDecoration(
-                            color: _getFilterColor(f),
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(f, style: const TextStyle(color: Colors.white70, fontSize: 12)),
-                      ],
+              ...filters.where((f) => f != _selectedStatus).map((f) => _buildFilterItem(f)),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterItem(String filter) {
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedStatus = filter;
+          _isFilterExpanded = false;
+        });
+      },
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Row(
+          children: [
+            Icon(Icons.circle, color: _getFilterColor(filter), size: 10),
+            const SizedBox(width: 12),
+            Text(
+              filter,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRadiusSelector() {
+    final radii = [10.0, 25.0, 50.0];
+    
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A).withOpacity(0.9),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: radii.map((r) {
+          final isSelected = _selectedRadius == r;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () {
+                if (_selectedRadius != r) {
+                  setState(() {
+                    _selectedRadius = r;
+                  });
+                  // Immediately fetch with existing location if available for speed
+                  _fetchNearbyComplaints(location: _userLocation);
+                }
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppColors.primary : Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Center(
+                  child: Text(
+                    '${r.toInt()} km',
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : Colors.white60,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 12,
                     ),
                   ),
                 ),
               ),
-            ],
-          ],
-        ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }

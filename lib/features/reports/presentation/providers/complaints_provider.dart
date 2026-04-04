@@ -78,10 +78,10 @@ class ComplaintsProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> fetchNearbyComplaints(String token, double lat, double lng) async {
+  Future<void> fetchNearbyComplaints(String token, double lat, double lng, {double radius = 10.0}) async {
     try {
       final response = await http.get(
-        Uri.parse('${ApiConfig.nearbyComplaintsUrl}?lat=$lat&lng=$lng'),
+        Uri.parse('${ApiConfig.nearbyComplaintsUrl}?lat=$lat&lng=$lng&radius=$radius'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',

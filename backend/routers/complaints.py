@@ -116,6 +116,7 @@ def enrich_single(db: Session, c: models.Complaint) -> schemas.ComplaintResponse
 def get_nearby_complaints(
     lat: float = Query(..., description="User latitude"),
     lng: float = Query(..., description="User longitude"),
+    radius: float = Query(10.0, description="Search radius in kilometers"),
     db: Session = Depends(database.get_db),
     current_user: models.User = Depends(auth.get_current_user)
 ):
@@ -128,14 +129,14 @@ def get_nearby_complaints(
             
     all_complaints = query.all()
     
-    # Calculate distance and store in a list of tuples (complaint, distance) if within 50km
+    # Calculate distance and store in a list of tuples (complaint, distance) if within `radius` km
     complaints_with_distance = []
     for c in all_complaints:
         try:
             c_lat = float(c.latitude)
             c_lng = float(c.longitude)
             dist = haversine_distance(lat, lng, c_lat, c_lng)
-            if dist <= 10.0:  # Only include if within 10 km
+            if dist <= radius:  # Use the passed radius
                 complaints_with_distance.append((c, dist))
         except (ValueError, TypeError):
             # If coordinates are invalid, skip them for nearby
