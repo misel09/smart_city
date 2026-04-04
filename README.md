@@ -59,24 +59,6 @@ Smart City features a sophisticated **AI Integration Layer** utilizing **Google 
 
 ---
 
-## 📊 Incident Lifecycle & State Machine
-
-The project follows a rigorous state machine to ensure no issue falls through the cracks:
-
-```mermaid
-graph TD
-    A[Citizen: Incident Detected] --> B[AI Diagnosis & GPS Tagging]
-    B --> C[Registered in District Queue]
-    C --> D{Radius Match?}
-    D ---->|Yes| E[Contractor Task Feed]
-    E -->|Acceptance| F[In Progress: Field Work]
-    F -->|Proof Upload| G[Resolved]
-    G --> H[Citizen Review & Closing]
-    H --> I[Archived with Analytics]
-```
-
----
-
 ## 🚀 Deployment & Configuration
 
 ### 🔧 Backend Environment
