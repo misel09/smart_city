@@ -1,4 +1,4 @@
-# 🏙️ Smart City — Urban Infrastructure & Incident Management Platform
+# 🏙️ Smart City — AI-Powered Urban Resolution Engine
 
 ![Release](https://img.shields.io/badge/Release-v1.0.0--Stable-success?style=for-the-badge)
 ![Flutter](https://img.shields.io/badge/Flutter-3.10+-02569B?style=for-the-badge&logo=flutter&logoColor=white)
